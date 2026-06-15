@@ -1,10 +1,18 @@
 'use client';
 import { useState } from 'react';
 import Header from '@/components/Header';
-import { EPISODES, STAGE_LABELS, STATUS_COLORS } from '@/lib/data';
+import { EPISODES, SEASONS, getEpisodesBySeason, STAGE_LABELS, STATUS_COLORS } from '@/lib/data';
 
 export default function EpisodesPage() {
-  const [selectedEp, setSelectedEp] = useState(EPISODES[0]);
+  const [activeSeason, setActiveSeason] = useState(1);
+  const seasonEps = getEpisodesBySeason(activeSeason);
+  const [selectedEp, setSelectedEp] = useState(seasonEps[0]);
+
+  const handleSeasonChange = (s: number) => {
+    setActiveSeason(s);
+    const eps = getEpisodesBySeason(s);
+    setSelectedEp(eps[0]);
+  };
 
   const stageKeys = Object.keys(selectedEp.stages) as (keyof typeof selectedEp.stages)[];
 
@@ -12,15 +20,34 @@ export default function EpisodesPage() {
     <>
       <Header title="Episode Tracker" />
       <div className="p-6 space-y-6">
+        {/* Season Tabs */}
+        <div className="flex items-center gap-2">
+          {SEASONS.map(s => (
+            <button
+              key={s}
+              onClick={() => handleSeasonChange(s)}
+              className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+              style={{
+                background: activeSeason === s ? 'rgba(139,92,246,0.2)' : 'rgba(24,24,31,0.5)',
+                color: activeSeason === s ? '#8b5cf6' : 'var(--muted)',
+                border: activeSeason === s ? '1px solid rgba(139,92,246,0.3)' : '1px solid var(--card-border)'
+              }}
+            >
+              Season {s} ({getEpisodesBySeason(s).length} eps)
+            </button>
+          ))}
+        </div>
+
+        {/* Episode Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {EPISODES.map(ep => (
+          {seasonEps.map(ep => (
             <button
               key={ep.id}
               onClick={() => setSelectedEp(ep)}
               className={`glass-card rounded-xl p-4 text-center transition-all cursor-pointer ${selectedEp.id === ep.id ? 'ring-2 ring-[#8b5cf6]' : 'hover:border-[#3f3f46]'}`}
             >
               <div className="text-lg font-bold text-white">{ep.number}</div>
-              <div className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>{ep.title}</div>
+              <div className="text-[10px] truncate" style={{ color: 'var(--muted)' }} title={ep.title}>{ep.title}</div>
               <div className="mt-2">
                 <div className="progress-bar">
                   <div className="progress-bar-fill gradient-accent" style={{ width: `${ep.progress}%` }} />
@@ -33,11 +60,12 @@ export default function EpisodesPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-2 space-y-6">
+            {/* Episode Detail */}
             <div className="glass-card rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-xl font-bold text-white">{selectedEp.id} &mdash; {selectedEp.title}</h2>
-                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Episode {selectedEp.number} &middot; Season 1</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Episode {selectedEp.number} &middot; Season {selectedEp.season}</p>
                 </div>
                 <span
                   className="text-xs px-3 py-1.5 rounded-full font-medium"
@@ -45,6 +73,12 @@ export default function EpisodesPage() {
                 >
                   {selectedEp.status.charAt(0).toUpperCase() + selectedEp.status.slice(1)}
                 </span>
+              </div>
+
+              {/* Synopsis */}
+              <div className="p-3 rounded-lg mb-5" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)' }}>
+                <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--accent)' }}>Synopsis</div>
+                <p className="text-sm text-[#d4d4d8]">{selectedEp.synopsis}</p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -68,7 +102,7 @@ export default function EpisodesPage() {
 
               <div className="space-y-3">
                 <div className="text-xs font-semibold text-white mb-3">Production Pipeline</div>
-                {stageKeys.map((stage, i) => {
+                {stageKeys.map((stage) => {
                   const val = selectedEp.stages[stage];
                   return (
                     <div key={stage} className="flex items-center gap-4">
@@ -93,6 +127,7 @@ export default function EpisodesPage() {
               </div>
             </div>
 
+            {/* Production Flow */}
             <div className="glass-card rounded-xl p-6">
               <div className="text-xs font-semibold text-white mb-4">Production Flow</div>
               <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -128,6 +163,7 @@ export default function EpisodesPage() {
             </div>
           </div>
 
+          {/* Right Column */}
           <div className="space-y-6">
             <div className="glass-card rounded-xl p-5">
               <div className="text-xs font-semibold text-white mb-4">Key Dates</div>
@@ -189,6 +225,33 @@ export default function EpisodesPage() {
                     <span className="text-[10px]" style={{ color: 'var(--muted)' }}>Complete</span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Season Episode List */}
+            <div className="glass-card rounded-xl p-5">
+              <div className="text-xs font-semibold text-white mb-3">Season {activeSeason} Episodes</div>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {seasonEps.map(ep => (
+                  <button
+                    key={ep.id}
+                    onClick={() => setSelectedEp(ep)}
+                    className="w-full text-left p-2 rounded-lg transition-colors cursor-pointer"
+                    style={{
+                      background: selectedEp.id === ep.id ? 'rgba(139,92,246,0.1)' : 'transparent',
+                      border: selectedEp.id === ep.id ? '1px solid rgba(139,92,246,0.2)' : '1px solid transparent'
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-medium text-white">{ep.id}</span>
+                        <span className="text-xs text-[#a1a1aa] ml-2">{ep.title}</span>
+                      </div>
+                      <span className="text-[10px] font-medium" style={{ color: STATUS_COLORS[ep.status] }}>{ep.progress}%</span>
+                    </div>
+                    <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--muted)' }}>{ep.synopsis}</div>
+                  </button>
+                ))}
               </div>
             </div>
           </div>

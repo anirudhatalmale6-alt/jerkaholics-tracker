@@ -10,7 +10,7 @@ export default function Header({ title }: { title: string }) {
     <header className="h-16 flex items-center justify-between px-6 border-b" style={{ borderColor: 'var(--card-border)', background: 'var(--background)' }}>
       <div>
         <h1 className="text-lg font-semibold text-white">{title}</h1>
-        <p className="text-xs" style={{ color: 'var(--muted)' }}>Season 1 &middot; 8 Episodes &middot; Adult Swim</p>
+        <p className="text-xs" style={{ color: 'var(--muted)' }}>3 Seasons &middot; 23 Episodes &middot; Adult Swim</p>
       </div>
 
       <div className="flex items-center gap-4">

@@ -1,9 +1,10 @@
 'use client';
+import { useState } from 'react';
 import Header from '@/components/Header';
 import {
-  EPISODES, TASKS, VENDORS, RISKS,
+  EPISODES, TASKS, VENDORS, RISKS, SEASONS,
   getSeasonProgress, getUpcomingDeadlines, getTasksByStatus,
-  STAGE_LABELS, STATUS_COLORS, EpisodeStatus
+  getEpisodesBySeason, STAGE_LABELS, STATUS_COLORS, EpisodeStatus
 } from '@/lib/data';
 
 function StatCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color: string }) {
@@ -29,8 +30,8 @@ function EpisodePipeline({ ep }: { ep: typeof EPISODES[0] }) {
           <div className="text-sm font-semibold text-white">{ep.id}</div>
           <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Ep {ep.number}</div>
         </div>
-        <div className="w-32 flex-shrink-0">
-          <div className="text-sm text-[#d4d4d8] truncate">{ep.title}</div>
+        <div className="w-40 flex-shrink-0">
+          <div className="text-sm text-[#d4d4d8] truncate" title={ep.title}>{ep.title}</div>
           <div className="text-[10px]" style={{ color: 'var(--muted)' }}>{ep.vendor}</div>
         </div>
         <div className="flex-1 flex gap-1">
@@ -65,27 +66,49 @@ function EpisodePipeline({ ep }: { ep: typeof EPISODES[0] }) {
 }
 
 export default function Dashboard() {
-  const seasonProgress = getSeasonProgress();
+  const [activeSeason, setActiveSeason] = useState(1);
+  const seasonEpisodes = getEpisodesBySeason(activeSeason);
+  const seasonProgress = getSeasonProgress(activeSeason);
   const upcoming = getUpcomingDeadlines(14);
   const taskStats = getTasksByStatus();
   const criticalRisks = RISKS.filter(r => r.severity === 'critical' || r.severity === 'high');
   const activeVendorCount = VENDORS.filter(v => v.status === 'active').length;
+  const totalProgress = getSeasonProgress();
+
+  const seasonTargets: Record<number, string> = { 1: 'March 2027', 2: 'March 2028', 3: 'March 2029' };
 
   return (
     <>
-      <Header title="Season Overview" />
+      <Header title="Production Overview" />
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Season Progress" value={`${seasonProgress}%`} sub="8 episodes ordered" color="var(--accent)" />
-          <StatCard label="Active Tasks" value={taskStats.in_progress + taskStats.review} sub={`${taskStats.todo} queued`} color="var(--info)" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <StatCard label="Overall Progress" value={`${totalProgress}%`} sub="23 episodes / 3 seasons" color="var(--accent)" />
+          <StatCard label={`S${activeSeason} Progress`} value={`${seasonProgress}%`} sub={`${seasonEpisodes.length} episodes`} color="var(--info)" />
+          <StatCard label="Active Tasks" value={taskStats.in_progress + taskStats.review} sub={`${taskStats.todo} queued`} color="var(--warning)" />
           <StatCard label="Active Vendors" value={`${activeVendorCount}/3`} sub="Studios assigned" color="var(--success)" />
           <StatCard label="Open Risks" value={RISKS.filter(r => r.status !== 'resolved').length} sub={`${criticalRisks.length} high/critical`} color="var(--danger)" />
         </div>
 
+        {/* Season Tabs + Pipeline */}
         <div className="glass-card rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold text-white">Season 1 Production Pipeline</span>
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>Target: March 2027</span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              {SEASONS.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setActiveSeason(s)}
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                  style={{
+                    background: activeSeason === s ? 'rgba(139,92,246,0.2)' : 'transparent',
+                    color: activeSeason === s ? '#8b5cf6' : 'var(--muted)',
+                    border: activeSeason === s ? '1px solid rgba(139,92,246,0.3)' : '1px solid transparent'
+                  }}
+                >
+                  Season {s}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>Target: {seasonTargets[activeSeason]}</span>
           </div>
           <div className="flex gap-3 mb-4 text-[10px] flex-wrap" style={{ color: 'var(--muted)' }}>
             {Object.entries(STAGE_LABELS).map(([key, label]) => (
@@ -110,13 +133,13 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-2 glass-card rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--card-border)' }}>
-              <span className="text-sm font-semibold text-white">Episode Pipeline</span>
+              <span className="text-sm font-semibold text-white">Season {activeSeason} Episode Pipeline</span>
               <span className="text-xs px-2 py-1 rounded-full" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--accent)' }}>
-                {EPISODES.length} episodes
+                {seasonEpisodes.length} episodes
               </span>
             </div>
             <div>
-              {EPISODES.map(ep => (
+              {seasonEpisodes.map(ep => (
                 <EpisodePipeline key={ep.id} ep={ep} />
               ))}
             </div>

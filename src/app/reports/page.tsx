@@ -1,6 +1,6 @@
 'use client';
 import Header from '@/components/Header';
-import { EPISODES, VENDORS, TASKS, RISKS, getSeasonProgress, getTasksByStatus } from '@/lib/data';
+import { EPISODES, VENDORS, TASKS, RISKS, getSeasonProgress, getTasksByStatus, getEpisodesBySeason } from '@/lib/data';
 
 function BarChart({ data, maxVal }: { data: { label: string; value: number; color: string }[]; maxVal: number }) {
   return (
