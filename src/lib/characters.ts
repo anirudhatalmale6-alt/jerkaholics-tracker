@@ -72,9 +72,9 @@ export const CHARACTERS: Character[] = [
   {
     id: 'CHAR-004',
     name: 'Pete',
-    voiceActor: 'TBD',
-    roles: ['Pete'],
-    description: 'A depressed and melancholic character who tells the story of his life. Central to Episode 103 "The Pete Life of Pete".',
+    voiceActor: 'H. Jon Benjamin',
+    roles: ['Pete', 'Narrator', 'Bartender', 'Eddie'],
+    description: 'A depressed and melancholic character who tells the story of his life. Central to Episode 103 "The Pete Life of Pete". H. Jon Benjamin also voices the Narrator, Bartender, and Eddie.',
     type: 'recurring',
     firstAppearance: 'JERK-103',
     traits: ['Depressed', 'Introspective', 'Relatable'],
@@ -85,8 +85,8 @@ export const CHARACTERS: Character[] = [
   {
     id: 'CHAR-005',
     name: 'Topher',
-    voiceActor: 'TBD',
-    roles: ['Topher'],
+    voiceActor: 'Jason Schwartzman',
+    roles: ['Topher', 'Young Topher'],
     description: 'A recurring character who is a bored accountant. Has multiple storylines across seasons including becoming the King of Bol and switching between modes.',
     type: 'recurring',
     firstAppearance: 'JERK-203',
@@ -98,8 +98,8 @@ export const CHARACTERS: Character[] = [
   {
     id: 'CHAR-006',
     name: 'Mrs. Harris',
-    voiceActor: 'TBD',
-    roles: ['Mrs. Harris'],
+    voiceActor: 'Rhea Perlman',
+    roles: ['Mrs. Harris', 'Elderly Lady #1'],
     description: 'An older woman who keeps a watchful eye on the boys. Stern-faced with gray curly hair. Appears notably in Episode 202 chasing the boys.',
     type: 'recurring',
     firstAppearance: 'JERK-101',
@@ -112,7 +112,7 @@ export const CHARACTERS: Character[] = [
   {
     id: 'CHAR-007',
     name: 'Tina',
-    voiceActor: 'TBD',
+    voiceActor: 'Wendi McLendon-Covey',
     roles: ['Tina'],
     description: 'Takes the boys on what seems like the ultimate vacation in Episode 306 "Al Dante" - which turns out to be hellish.',
     type: 'recurring',
@@ -123,7 +123,7 @@ export const CHARACTERS: Character[] = [
   {
     id: 'CHAR-008',
     name: 'Mr. Withers',
-    voiceActor: 'TBD',
+    voiceActor: 'Jeff Goldblum',
     roles: ['Mr. Withers'],
     description: 'Owner of the teleportation device used in the pilot episode "Departed". An eccentric inventor-type character.',
     type: 'recurring',
