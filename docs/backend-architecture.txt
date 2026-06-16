@@ -1,0 +1,1372 @@
+================================================================================
+  JERKAHOLICS PRODUCTION TRACKER - BACKEND ARCHITECTURE
+  Version 1.0 | June 2026
+================================================================================
+
+
+================================================================================
+  1. ENTITY RELATIONSHIP DIAGRAM (ERD)
+================================================================================
+
+  SEASONS
+    |
+    |-- has many --> EPISODES
+    |                   |
+    |                   |-- has many --> TASKS
+    |                   |                  |-- assigned to --> USERS
+    |                   |                  |-- has many --> NOTES
+    |                   |
+    |                   |-- has many --> ASSETS
+    |                   |                  |-- uploaded by --> USERS
+    |                   |                  |-- approved by --> USERS
+    |                   |
+    |                   |-- has many --> DELIVERIES
+    |                   |                  |-- from --> VENDORS
+    |                   |                  |-- reviewed by --> USERS
+    |                   |                  |-- has many --> NOTES
+    |                   |
+    |                   |-- has many --> RISKS
+    |                   |                  |-- owned by --> USERS
+    |                   |
+    |                   |-- has many --> NOTES
+    |                   |
+    |                   |-- assigned via --> VENDOR_ASSIGNMENTS --> VENDORS
+    |
+  CHARACTERS
+    |-- has many --> CHARACTER_ROLES
+    |-- has many --> ASSETS (character-level)
+    |-- first appears in --> EPISODES
+    |
+  VENDORS (Animation Studios)
+    |-- has many --> VENDOR_ASSIGNMENTS --> EPISODES
+    |-- has many --> DELIVERIES
+    |-- has many --> VENDOR_CONTACTS
+    |-- has many --> PERFORMANCE_METRICS
+    |
+  USERS
+    |-- belongs to --> ROLES
+    |-- optionally belongs to --> VENDORS (vendor staff)
+    |
+  ROLES
+    |-- has many --> PERMISSIONS
+    |
+  AUDIT_LOG
+    |-- records actions by --> USERS
+
+
+  KEY RELATIONSHIPS:
+  ------------------
+  Season 1:N Episode          (a season contains multiple episodes)
+  Episode 1:N Task            (each episode has tasks per pipeline stage)
+  Episode 1:N Asset           (production assets per episode)
+  Episode N:N Vendor          (via vendor_assignments join table)
+  Episode 1:N Delivery        (vendors submit deliveries per episode)
+  Episode 1:N Risk            (risks tracked per episode)
+  Episode 1:N Note            (notes/feedback per episode)
+  Character 1:N Asset         (character-level art assets)
+  Character 1:N CharacterRole (voice actors play multiple roles)
+  User N:1 Role               (each user has one role)
+  Role 1:N Permission         (each role has multiple permissions)
+  Vendor 1:N Delivery         (vendors submit deliveries)
+  Task N:1 User               (tasks assigned to users)
+  Delivery N:1 User           (deliveries reviewed by users)
+
+
+================================================================================
+  2. DATABASE SCHEMA DOCUMENTATION
+================================================================================
+
+------------------------------------------------------------------------
+TABLE: seasons
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  number          INTEGER         NOT NULL, UNIQUE (1, 2, 3)
+  title           VARCHAR(255)    NOT NULL
+  episode_count   INTEGER         NOT NULL
+  status          ENUM            NOT NULL, DEFAULT 'pre_production'
+  start_date      DATE            NULL
+  target_end_date DATE            NULL
+  network         VARCHAR(100)    DEFAULT 'Adult Swim'
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Status enum: pre_production | in_production | post_production | delivered | on_hold
+
+
+------------------------------------------------------------------------
+TABLE: episodes
+------------------------------------------------------------------------
+  Column              Type            Constraints
+  ----------          ----------      ----------
+  id                  UUID            PK, auto-generated
+  season_id           UUID            FK -> seasons(id), NOT NULL
+  production_code     VARCHAR(20)     NOT NULL, UNIQUE (e.g. JERK-101)
+  episode_number      INTEGER         NOT NULL
+  title               VARCHAR(255)    NOT NULL
+  synopsis            TEXT            NULL
+  status              ENUM            NOT NULL, DEFAULT 'not_started'
+  current_stage       ENUM            NOT NULL, DEFAULT 'writing'
+  progress            INTEGER         NOT NULL, DEFAULT 0 (0-100)
+  delivery_deadline   DATE            NOT NULL
+  air_date            DATE            NULL
+  script_locked       BOOLEAN         NOT NULL, DEFAULT FALSE
+  created_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+  created_by          UUID            FK -> users(id)
+
+  Status enum: not_started | in_progress | on_hold | completed | delivered
+  Stage enum:  writing | storyboard | animatic | voice | animation | cleanup | post | delivery
+
+  INDEX: (season_id, episode_number) UNIQUE
+  INDEX: (production_code) UNIQUE
+  INDEX: (current_stage)
+  INDEX: (delivery_deadline)
+
+
+------------------------------------------------------------------------
+TABLE: tasks
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  episode_id      UUID            FK -> episodes(id), NOT NULL
+  title           VARCHAR(255)    NOT NULL
+  description     TEXT            NULL
+  department      VARCHAR(100)    NOT NULL
+  stage           ENUM            NOT NULL (same as episode stage enum)
+  status          ENUM            NOT NULL, DEFAULT 'todo'
+  priority        ENUM            NOT NULL, DEFAULT 'medium'
+  assigned_to     UUID            FK -> users(id), NULL
+  due_date        DATE            NULL
+  started_at      TIMESTAMP       NULL
+  completed_at    TIMESTAMP       NULL
+  estimated_hours DECIMAL(5,1)    NULL
+  actual_hours    DECIMAL(5,1)    NULL
+  sort_order      INTEGER         NOT NULL, DEFAULT 0
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  created_by      UUID            FK -> users(id)
+
+  Status enum:   todo | in_progress | review | revision | blocked | done
+  Priority enum: low | medium | high | critical
+  Stage enum:    writing | storyboard | animatic | voice | animation | cleanup | post | delivery
+
+  INDEX: (episode_id, stage)
+  INDEX: (assigned_to, status)
+  INDEX: (due_date)
+  INDEX: (status)
+
+
+------------------------------------------------------------------------
+TABLE: assets
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  episode_id      UUID            FK -> episodes(id), NULL
+  character_id    UUID            FK -> characters(id), NULL
+  name            VARCHAR(255)    NOT NULL
+  type            ENUM            NOT NULL
+  category        ENUM            NOT NULL
+  file_path       VARCHAR(500)    NOT NULL
+  file_size       BIGINT          NOT NULL (bytes)
+  mime_type       VARCHAR(100)    NOT NULL
+  version         VARCHAR(20)     NOT NULL, DEFAULT 'v1.0'
+  status          ENUM            NOT NULL, DEFAULT 'pending'
+  uploaded_by     UUID            FK -> users(id), NOT NULL
+  approved_by     UUID            FK -> users(id), NULL
+  approved_at     TIMESTAMP       NULL
+  revision_of     UUID            FK -> assets(id), NULL (links to previous version)
+  notes           TEXT            NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Type enum:     reference | model_sheet | expression_sheet | turnaround | color_key |
+                 prop | background | storyboard_frame | animatic_clip | audio_track |
+                 voice_recording | final_master | color_script
+
+  Category enum: character | background | props | storyboards | animatics | audio | masters
+
+  Status enum:   pending | approved | revision | archived
+
+  CHECK: episode_id IS NOT NULL OR character_id IS NOT NULL
+  INDEX: (episode_id, category)
+  INDEX: (character_id, type)
+  INDEX: (status)
+  INDEX: (uploaded_by)
+
+
+------------------------------------------------------------------------
+TABLE: deliveries
+------------------------------------------------------------------------
+  Column              Type            Constraints
+  ----------          ----------      ----------
+  id                  UUID            PK, auto-generated
+  episode_id          UUID            FK -> episodes(id), NOT NULL
+  vendor_id           UUID            FK -> vendors(id), NOT NULL
+  delivery_type       ENUM            NOT NULL
+  status              ENUM            NOT NULL, DEFAULT 'pending'
+  file_path           VARCHAR(500)    NULL
+  file_size           BIGINT          NULL
+  submitted_at        TIMESTAMP       NULL
+  submitted_by        UUID            FK -> users(id), NULL
+  reviewed_by         UUID            FK -> users(id), NULL
+  reviewed_at         TIMESTAMP       NULL
+  revision_number     INTEGER         NOT NULL, DEFAULT 0
+  parent_delivery_id  UUID            FK -> deliveries(id), NULL
+  qc_passed           BOOLEAN         NULL
+  qc_notes            TEXT            NULL
+  notes               TEXT            NULL
+  created_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Delivery type enum: rough_animation | cleaned_animation | colored_frames |
+                      composited_scenes | rough_cut | final_cut | revision | pickup
+  Status enum:        pending | submitted | under_review | approved | rejected | revision_requested
+
+  INDEX: (episode_id, vendor_id)
+  INDEX: (status)
+  INDEX: (vendor_id, submitted_at)
+
+
+------------------------------------------------------------------------
+TABLE: risks
+------------------------------------------------------------------------
+  Column              Type            Constraints
+  ----------          ----------      ----------
+  id                  UUID            PK, auto-generated
+  episode_id          UUID            FK -> episodes(id), NULL (can be season-wide)
+  season_id           UUID            FK -> seasons(id), NULL
+  title               VARCHAR(255)    NOT NULL
+  description         TEXT            NOT NULL
+  severity            ENUM            NOT NULL
+  status              ENUM            NOT NULL, DEFAULT 'identified'
+  category            ENUM            NOT NULL, DEFAULT 'schedule'
+  mitigation_plan     TEXT            NULL
+  impact_description  TEXT            NULL
+  owner_id            UUID            FK -> users(id), NOT NULL
+  due_date            DATE            NULL
+  resolved_at         TIMESTAMP       NULL
+  created_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Severity enum: low | medium | high | critical
+  Status enum:   identified | monitoring | mitigating | escalated | resolved
+  Category enum: schedule | budget | quality | vendor | technical | personnel
+
+  INDEX: (severity, status)
+  INDEX: (episode_id)
+  INDEX: (owner_id)
+
+
+------------------------------------------------------------------------
+TABLE: users
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  email           VARCHAR(255)    NOT NULL, UNIQUE
+  name            VARCHAR(255)    NOT NULL
+  password_hash   VARCHAR(255)    NOT NULL
+  role_id         UUID            FK -> roles(id), NOT NULL
+  vendor_id       UUID            FK -> vendors(id), NULL (for vendor staff)
+  avatar_url      VARCHAR(500)    NULL
+  is_active       BOOLEAN         NOT NULL, DEFAULT TRUE
+  last_login      TIMESTAMP       NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  INDEX: (email) UNIQUE
+  INDEX: (role_id)
+  INDEX: (vendor_id)
+
+
+------------------------------------------------------------------------
+TABLE: roles
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  name            VARCHAR(50)     NOT NULL, UNIQUE
+  display_name    VARCHAR(100)    NOT NULL
+  description     TEXT            NULL
+  is_system       BOOLEAN         NOT NULL, DEFAULT FALSE
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Default roles:
+    admin               - System administrator, full access
+    executive_producer  - Oversight and approvals, read-all
+    showrunner          - Creative lead, manages writers and story
+    producer            - Day-to-day production management
+    production_coord    - Coordinates schedules, assignments, logistics
+    writer              - Script creation and revision
+    storyboard_artist   - Storyboard creation
+    audio_engineer      - Voice recording and audio post
+    vendor_lead         - External studio lead (scoped to their vendor)
+    qc_reviewer         - Quality control review and approval
+    network_reviewer    - Network notes and final approval
+
+
+------------------------------------------------------------------------
+TABLE: permissions
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  role_id         UUID            FK -> roles(id), NOT NULL
+  resource        VARCHAR(50)     NOT NULL
+  action          VARCHAR(50)     NOT NULL
+  scope           ENUM            NOT NULL, DEFAULT 'all'
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Resource values: seasons | episodes | tasks | assets | deliveries |
+                   risks | characters | vendors | reports | users | notes | settings
+
+  Action values:   view | create | edit | delete | approve | deliver |
+                   upload | assign | export | manage_users
+
+  Scope enum:      all | own | assigned | vendor_scoped
+
+  UNIQUE: (role_id, resource, action)
+
+
+------------------------------------------------------------------------
+TABLE: characters
+------------------------------------------------------------------------
+  Column              Type            Constraints
+  ----------          ----------      ----------
+  id                  UUID            PK, auto-generated
+  name                VARCHAR(100)    NOT NULL
+  voice_actor         VARCHAR(255)    NULL
+  description         TEXT            NULL
+  type                ENUM            NOT NULL, DEFAULT 'recurring'
+  first_appearance_id UUID            FK -> episodes(id), NULL
+  created_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Type enum: main | recurring | guest
+
+  INDEX: (type)
+  INDEX: (voice_actor)
+
+
+------------------------------------------------------------------------
+TABLE: character_roles
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  character_id    UUID            FK -> characters(id), NOT NULL, ON DELETE CASCADE
+  role_name       VARCHAR(100)    NOT NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  UNIQUE: (character_id, role_name)
+
+
+------------------------------------------------------------------------
+TABLE: character_traits
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  character_id    UUID            FK -> characters(id), NOT NULL, ON DELETE CASCADE
+  trait           VARCHAR(50)     NOT NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  UNIQUE: (character_id, trait)
+
+
+------------------------------------------------------------------------
+TABLE: vendors
+------------------------------------------------------------------------
+  Column              Type            Constraints
+  ----------          ----------      ----------
+  id                  UUID            PK, auto-generated
+  name                VARCHAR(255)    NOT NULL
+  country             VARCHAR(100)    NULL
+  contact_name        VARCHAR(255)    NULL
+  contact_email       VARCHAR(255)    NULL
+  contact_phone       VARCHAR(50)     NULL
+  specialization      TEXT            NULL
+  quality_score       DECIMAL(5,2)    NOT NULL, DEFAULT 0 (0-100)
+  delivery_score      DECIMAL(5,2)    NOT NULL, DEFAULT 0 (0-100)
+  status              ENUM            NOT NULL, DEFAULT 'active'
+  contract_start      DATE            NULL
+  contract_end        DATE            NULL
+  notes               TEXT            NULL
+  created_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at          TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Status enum: active | inactive | probation | onboarding
+
+  INDEX: (status)
+
+
+------------------------------------------------------------------------
+TABLE: vendor_assignments
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  vendor_id       UUID            FK -> vendors(id), NOT NULL
+  episode_id      UUID            FK -> episodes(id), NOT NULL
+  assigned_by     UUID            FK -> users(id), NOT NULL
+  assigned_at     TIMESTAMP       NOT NULL, DEFAULT NOW()
+  due_date        DATE            NULL
+  status          ENUM            NOT NULL, DEFAULT 'assigned'
+  notes           TEXT            NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Status enum: assigned | in_progress | delivered | completed | cancelled
+
+  UNIQUE: (vendor_id, episode_id)
+  INDEX: (vendor_id)
+  INDEX: (episode_id)
+
+
+------------------------------------------------------------------------
+TABLE: notes
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  episode_id      UUID            FK -> episodes(id), NULL
+  task_id         UUID            FK -> tasks(id), NULL
+  delivery_id     UUID            FK -> deliveries(id), NULL
+  asset_id        UUID            FK -> assets(id), NULL
+  author_id       UUID            FK -> users(id), NOT NULL
+  content         TEXT            NOT NULL
+  type            ENUM            NOT NULL, DEFAULT 'general'
+  is_internal     BOOLEAN         NOT NULL, DEFAULT FALSE
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+  updated_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Type enum: general | feedback | revision_note | approval_note | network_note | creative_note
+
+  CHECK: at least one of episode_id, task_id, delivery_id, asset_id is NOT NULL
+  INDEX: (episode_id)
+  INDEX: (task_id)
+  INDEX: (author_id)
+
+
+------------------------------------------------------------------------
+TABLE: notifications
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  user_id         UUID            FK -> users(id), NOT NULL
+  type            ENUM            NOT NULL
+  title           VARCHAR(255)    NOT NULL
+  message         TEXT            NOT NULL
+  link            VARCHAR(500)    NULL
+  is_read         BOOLEAN         NOT NULL, DEFAULT FALSE
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Type enum: deadline_warning | overdue | delivery_submitted | delivery_reviewed |
+             approval_required | risk_alert | assignment | stage_transition |
+             vendor_update | system
+
+  INDEX: (user_id, is_read)
+  INDEX: (created_at)
+
+
+------------------------------------------------------------------------
+TABLE: audit_log
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  user_id         UUID            FK -> users(id), NOT NULL
+  action          VARCHAR(50)     NOT NULL
+  resource_type   VARCHAR(50)     NOT NULL
+  resource_id     UUID            NOT NULL
+  old_values      JSONB           NULL
+  new_values      JSONB           NULL
+  ip_address      VARCHAR(45)     NULL
+  user_agent      VARCHAR(500)    NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  INDEX: (resource_type, resource_id)
+  INDEX: (user_id, created_at)
+  INDEX: (created_at)
+
+  Note: This table is append-only. No updates or deletes.
+
+
+------------------------------------------------------------------------
+TABLE: pipeline_stage_history
+------------------------------------------------------------------------
+  Column          Type            Constraints
+  ----------      ----------      ----------
+  id              UUID            PK, auto-generated
+  episode_id      UUID            FK -> episodes(id), NOT NULL
+  from_stage      ENUM            NULL (null for initial)
+  to_stage        ENUM            NOT NULL
+  transitioned_by UUID            FK -> users(id), NOT NULL
+  notes           TEXT            NULL
+  created_at      TIMESTAMP       NOT NULL, DEFAULT NOW()
+
+  Tracks every stage transition for an episode.
+  INDEX: (episode_id, created_at)
+
+
+================================================================================
+  3. AUTHENTICATION & PERMISSIONS MATRIX
+================================================================================
+
+Authentication: JWT-based (access token + refresh token)
+  - Access token: 15 min expiry, stored in memory
+  - Refresh token: 7 day expiry, stored in httpOnly cookie
+  - Password hashing: bcrypt (12 rounds)
+  - Rate limiting: 5 failed attempts = 15 min lockout
+
+PERMISSIONS MATRIX:
+
+Resource        | Admin | Exec Producer | Showrunner | Producer | Prod Coord | Writer | Storyboard | Audio | Vendor Lead | QC       | Network
+----------------|-------|---------------|------------|----------|------------|--------|------------|-------|-------------|----------|--------
+Seasons         |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | All    | All        | All   | Assigned    | All      | All
+  Create        | Yes   | No            | No         | No       | No         | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | No         | Yes      | No         | No     | No         | No    | No          | No       | No
+                |       |               |            |          |            |        |            |       |             |          |
+Episodes        |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | All    | All        | All   | Assigned    | All      | All
+  Create        | Yes   | No            | Yes        | Yes      | No         | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | Yes        | Yes      | Yes        | No     | No         | No    | No          | No       | No
+  Delete        | Yes   | No            | No         | No       | No         | No     | No         | No    | No          | No       | No
+  Approve       | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | Yes      | Yes
+                |       |               |            |          |            |        |            |       |             |          |
+Tasks           |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | Own    | Own        | Own   | Assigned    | All      | No
+  Create        | Yes   | No            | Yes        | Yes      | Yes        | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | Yes        | Yes      | Yes        | Own    | Own        | Own   | Assigned    | No       | No
+  Assign        | Yes   | No            | Yes        | Yes      | Yes        | No     | No         | No    | No          | No       | No
+                |       |               |            |          |            |        |            |       |             |          |
+Assets          |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | Scripts | Boards    | Audio | Assigned    | All      | Final
+  Upload        | Yes   | No            | Yes        | Yes      | Yes        | Scripts | Boards    | Audio | Assigned    | No       | No
+  Approve       | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | Yes      | Yes
+  Delete        | Yes   | No            | No         | No       | No         | No     | No         | No    | No          | No       | No
+                |       |               |            |          |            |        |            |       |             |          |
+Deliveries      |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | No     | No         | No    | Own Vendor  | All      | All
+  Submit        | Yes   | No            | No         | No       | No         | No     | No         | No    | Yes         | No       | No
+  Review        | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | Yes      | Yes
+  Approve       | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | Yes      | Yes
+  Reject        | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | Yes      | Yes
+                |       |               |            |          |            |        |            |       |             |          |
+Vendors         |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | No     | No         | No    | Own         | All      | No
+  Create        | Yes   | No            | No         | Yes      | No         | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | No         | Yes      | Yes        | No     | No         | No    | No          | No       | No
+  Assign Eps    | Yes   | No            | Yes        | Yes      | Yes        | No     | No         | No    | No          | No       | No
+                |       |               |            |          |            |        |            |       |             |          |
+Characters      |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | All    | All        | All   | Assigned    | All      | All
+  Create        | Yes   | No            | Yes        | Yes      | No         | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | Yes        | Yes      | No         | No     | No         | No    | No          | No       | No
+                |       |               |            |          |            |        |            |       |             |          |
+Risks           |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | No     | No         | No    | Own Vendor  | All      | No
+  Create        | Yes   | No            | Yes        | Yes      | Yes        | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | Yes        | Yes      | Yes        | No     | No         | No    | No          | No       | No
+  Resolve       | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | No       | No
+                |       |               |            |          |            |        |            |       |             |          |
+Reports         |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | No     | No         | No    | Own Vendor  | Partial  | All
+  Export        | Yes   | Yes           | Yes        | Yes      | No         | No     | No         | No    | No          | No       | Yes
+                |       |               |            |          |            |        |            |       |             |          |
+Users           |       |               |            |          |            |        |            |       |             |          |
+  View          | All   | All           | All        | All      | All        | No     | No         | No    | Own Vendor  | No       | No
+  Create        | Yes   | No            | No         | No       | No         | No     | No         | No    | No          | No       | No
+  Edit          | Yes   | No            | No         | No       | No         | No     | No         | No    | No          | No       | No
+  Deactivate    | Yes   | No            | No         | No       | No         | No     | No         | No    | No          | No       | No
+
+
+SCOPE DEFINITIONS:
+  All       = Every record in the system
+  Own       = Records created by or assigned to this user
+  Assigned  = Records linked to episodes assigned to user's vendor
+  Scripts   = Only script-type assets
+  Boards    = Only storyboard-type assets
+  Audio     = Only audio-type assets
+  Final     = Only final/approved assets
+  Partial   = Limited report views (no financial data)
+
+
+================================================================================
+  4. WORKFLOW ENGINE - BUSINESS RULES
+================================================================================
+
+PIPELINE STAGE TRANSITIONS:
+  Each episode flows through 8 sequential stages. Transitions are enforced
+  by the system - you cannot skip stages or go backward (only reset via admin).
+
+  WRITING -------> STORYBOARD -------> ANIMATIC -------> VOICE
+     |                 |                   |                |
+     v                 v                   v                v
+  ANIMATION ------> CLEANUP ----------> POST ----------> DELIVERY
+
+TRANSITION RULES:
+
+  1. WRITING -> STORYBOARD
+     Prerequisites:
+       - Script status = "locked" (script_locked = TRUE on episode)
+       - All writing tasks for this episode = "done"
+       - Script asset uploaded and status = "approved"
+     Who can trigger: Showrunner, Producer
+     Auto-actions:
+       - Create storyboard tasks from template
+       - Notify storyboard team of new assignment
+       - Log stage transition in pipeline_stage_history
+
+  2. STORYBOARD -> ANIMATIC
+     Prerequisites:
+       - All storyboard tasks = "done"
+       - Storyboard assets uploaded and approved
+       - Showrunner or Producer approval recorded
+     Who can trigger: Producer, Production Coordinator
+     Auto-actions:
+       - Create animatic tasks
+       - Link storyboard assets as reference
+       - Notify animatic team
+
+  3. ANIMATIC -> VOICE
+     Prerequisites:
+       - Animatic completed and approved
+       - Animatic asset uploaded
+       - Timing sheet finalized
+     Who can trigger: Producer
+     Auto-actions:
+       - Create voice recording tasks
+       - Generate recording schedule
+       - Notify audio engineering team
+       - Notify voice actors (external notification)
+
+  4. VOICE -> ANIMATION
+     Prerequisites:
+       - All voice tracks recorded and approved
+       - Audio assets uploaded with status = "approved"
+       - Vendor assigned to episode (vendor_assignment exists and status != cancelled)
+       - Character model sheets approved for all characters in episode
+     Who can trigger: Producer
+     Auto-actions:
+       - Create animation tasks
+       - Package assets for vendor (animatic + voice + model sheets)
+       - Notify assigned vendor
+       - Create delivery record with status = "pending"
+       - Set vendor assignment status to "in_progress"
+
+  5. ANIMATION -> CLEANUP
+     Prerequisites:
+       - Rough animation delivery submitted by vendor
+       - Delivery status = "approved" (QC passed)
+       - All animation tasks = "done"
+     Who can trigger: Producer, QC Reviewer
+     Auto-actions:
+       - Create cleanup tasks
+       - Create new delivery record for cleanup phase
+       - Notify cleanup team
+
+  6. CLEANUP -> POST
+     Prerequisites:
+       - Cleaned animation approved
+       - All cleanup tasks = "done"
+       - Color model compliance verified
+     Who can trigger: Producer
+     Auto-actions:
+       - Create post-production tasks (compositing, effects, color correction, sound mix)
+       - Notify post-production team
+
+  7. POST -> DELIVERY
+     Prerequisites:
+       - All post-production tasks = "done"
+       - Final composited output approved
+       - Sound mix approved
+       - Color correction approved
+       - QC checklist completed (qc_passed = TRUE on delivery)
+     Who can trigger: Producer, QC Reviewer
+     Auto-actions:
+       - Create final delivery record
+       - Generate delivery package manifest
+       - Notify executive producer for final sign-off
+       - Notify network reviewer
+
+  8. DELIVERY COMPLETION
+     Prerequisites:
+       - Network reviewer approval (or executive producer approval)
+       - Final master asset uploaded with status = "approved"
+     Who can trigger: Executive Producer, Network Reviewer
+     Auto-actions:
+       - Mark episode status = "delivered"
+       - Update season progress
+       - Update vendor performance scores
+       - Archive working assets
+       - Generate completion report
+
+
+REVISION CYCLE RULES:
+
+  When a delivery is REJECTED:
+    1. Delivery status set to "rejected"
+    2. System auto-creates a new delivery record:
+       - delivery_type = "revision"
+       - revision_number = previous + 1
+       - parent_delivery_id = rejected delivery's ID
+    3. Episode current_stage reverts to the stage being revised
+    4. Revision tasks auto-created with priority = "high"
+    5. Notification sent to vendor with rejection notes
+    6. Risk auto-created if revision_number >= 3 (severity = "high")
+    7. Vendor delivery_score adjusted downward
+
+
+DEADLINE & OVERDUE RULES:
+
+  Task overdue detection (runs daily):
+    - If task.due_date < TODAY and task.status not in (done, blocked):
+      - Task priority auto-escalated one level (medium -> high -> critical)
+      - Notification sent to assigned user
+      - Notification sent to Producer and Production Coordinator
+      - After 3 days overdue: Risk auto-created (severity = medium)
+      - After 7 days overdue: Risk severity escalated to high
+
+  Episode delivery deadline warnings:
+    - 30 days before: "approaching" notification to Producer
+    - 14 days before: "warning" notification to Producer + Exec Producer
+    - 7 days before: "urgent" notification to all stakeholders
+    - 0 days (deadline day): "critical" notification + auto-risk creation
+    - Past due: daily "overdue" notifications until resolved
+
+  Vendor delivery warnings:
+    - If vendor has 2+ overdue deliveries: vendor status -> "probation"
+    - Notification to Producer with vendor performance summary
+    - Vendor delivery_score recalculated
+
+
+ASSET APPROVAL RULES:
+
+  - Assets uploaded with status = "pending"
+  - Only users with "approve" permission on assets can approve
+  - Approved assets are locked (no re-upload without creating new version)
+  - Revision requests create a new asset record linked via revision_of
+  - Character model sheets require approval before animation stage can begin
+  - Final master assets require QC + Executive Producer approval
+
+
+================================================================================
+  5. API SPECIFICATION
+================================================================================
+
+Base URL: /api/v1
+Content-Type: application/json
+Authentication: Bearer token in Authorization header
+
+------------------------------------------------------------------------
+  AUTHENTICATION
+------------------------------------------------------------------------
+
+  POST   /auth/login
+         Body: { email, password }
+         Response: { accessToken, refreshToken, user }
+
+  POST   /auth/refresh
+         Body: { refreshToken }
+         Response: { accessToken }
+
+  POST   /auth/logout
+         Headers: Authorization: Bearer <token>
+         Response: { success: true }
+
+  GET    /auth/me
+         Headers: Authorization: Bearer <token>
+         Response: { user object with role and permissions }
+
+
+------------------------------------------------------------------------
+  SEASONS
+------------------------------------------------------------------------
+
+  GET    /seasons
+         Query: ?status=in_production
+         Response: { data: Season[], meta: { total } }
+
+  GET    /seasons/:id
+         Response: { data: Season, episodes: Episode[], progress: number }
+
+  POST   /seasons                           [Admin only]
+         Body: { number, title, episode_count, start_date, target_end_date }
+         Response: { data: Season }
+
+  PATCH  /seasons/:id                       [Admin, Producer]
+         Body: { status?, target_end_date?, ... }
+         Response: { data: Season }
+
+
+------------------------------------------------------------------------
+  EPISODES
+------------------------------------------------------------------------
+
+  GET    /episodes
+         Query: ?season_id=&status=&current_stage=&vendor_id=&sort=&page=&limit=
+         Response: { data: Episode[], meta: { total, page, pages } }
+
+  GET    /episodes/:id
+         Response: { data: Episode, tasks: Task[], assets: Asset[],
+                     deliveries: Delivery[], risks: Risk[], notes: Note[],
+                     vendor_assignment: VendorAssignment, stage_history: StageHistory[] }
+
+  POST   /episodes                          [Admin, Showrunner, Producer]
+         Body: { season_id, production_code, episode_number, title, synopsis,
+                 delivery_deadline }
+         Response: { data: Episode }
+
+  PATCH  /episodes/:id                      [Admin, Showrunner, Producer, Prod Coord]
+         Body: { title?, synopsis?, status?, delivery_deadline?, air_date? }
+         Response: { data: Episode }
+
+  POST   /episodes/:id/transition           [Producer, Showrunner]
+         Body: { to_stage, notes? }
+         Response: { data: Episode, created_tasks: Task[] }
+         Errors: 409 if prerequisites not met (returns which ones failed)
+
+  POST   /episodes/:id/lock-script          [Showrunner, Producer]
+         Response: { data: Episode }
+
+  DELETE /episodes/:id                      [Admin only]
+         Response: { success: true }
+
+  GET    /episodes/:id/pipeline
+         Response: { stages: { stage, status, tasks_total, tasks_done,
+                     assets_count, approval_status }[] }
+
+
+------------------------------------------------------------------------
+  TASKS
+------------------------------------------------------------------------
+
+  GET    /tasks
+         Query: ?episode_id=&assigned_to=&status=&stage=&priority=&
+                 department=&due_before=&overdue=true&sort=&page=&limit=
+         Response: { data: Task[], meta: { total, page, pages } }
+
+  GET    /tasks/:id
+         Response: { data: Task, notes: Note[], episode: EpisodeSummary }
+
+  POST   /tasks                             [Admin, Showrunner, Producer, Prod Coord]
+         Body: { episode_id, title, description?, department, stage,
+                 priority?, assigned_to?, due_date?, estimated_hours? }
+         Response: { data: Task }
+
+  PATCH  /tasks/:id                         [Admin, Showrunner, Producer, Prod Coord, assigned user]
+         Body: { title?, status?, priority?, assigned_to?, due_date?,
+                 actual_hours?, description? }
+         Response: { data: Task }
+         Side effects: status -> "done" may trigger stage transition check
+
+  DELETE /tasks/:id                         [Admin, Producer]
+         Response: { success: true }
+
+  GET    /tasks/my                          [Any authenticated user]
+         Query: ?status=&sort=
+         Response: { data: Task[] }  (tasks assigned to current user)
+
+  GET    /tasks/overdue
+         Response: { data: Task[], meta: { total } }
+
+
+------------------------------------------------------------------------
+  ASSETS
+------------------------------------------------------------------------
+
+  GET    /assets
+         Query: ?episode_id=&character_id=&category=&type=&status=&
+                 uploaded_by=&sort=&page=&limit=
+         Response: { data: Asset[], meta: { total, page, pages } }
+
+  GET    /assets/:id
+         Response: { data: Asset, versions: Asset[] (linked via revision_of) }
+
+  POST   /assets/upload                     [Requires upload permission]
+         Content-Type: multipart/form-data
+         Body: file, episode_id?, character_id?, name, type, category, notes?
+         Response: { data: Asset, upload_url: string }
+
+  PATCH  /assets/:id                        [Admin, uploader]
+         Body: { name?, notes? }
+         Response: { data: Asset }
+
+  POST   /assets/:id/approve                [Requires approve permission]
+         Body: { notes? }
+         Response: { data: Asset }
+
+  POST   /assets/:id/request-revision       [Requires approve permission]
+         Body: { notes }
+         Response: { data: Asset, revision_asset: Asset }
+
+  DELETE /assets/:id                        [Admin only]
+         Response: { success: true }
+
+  GET    /assets/missing                    [Producer, Prod Coord]
+         Query: ?episode_id=&character_id=
+         Response: { data: { entity, entity_id, missing_types: string[] }[] }
+
+
+------------------------------------------------------------------------
+  VENDORS
+------------------------------------------------------------------------
+
+  GET    /vendors
+         Query: ?status=&sort=
+         Response: { data: Vendor[] }
+
+  GET    /vendors/:id
+         Response: { data: Vendor, assignments: VendorAssignment[],
+                     deliveries: Delivery[], performance: PerformanceMetrics }
+
+  POST   /vendors                           [Admin, Producer]
+         Body: { name, country?, contact_name?, contact_email?, specialization? }
+         Response: { data: Vendor }
+
+  PATCH  /vendors/:id                       [Admin, Producer, Prod Coord]
+         Body: { contact_name?, contact_email?, status?, notes? }
+         Response: { data: Vendor }
+
+  GET    /vendors/:id/performance
+         Response: { quality_score, delivery_score, on_time_rate,
+                     revision_rate, episodes_completed, episodes_active,
+                     avg_turnaround_days, trend: { month, score }[] }
+
+
+------------------------------------------------------------------------
+  VENDOR ASSIGNMENTS
+------------------------------------------------------------------------
+
+  GET    /vendor-assignments
+         Query: ?vendor_id=&episode_id=&status=
+         Response: { data: VendorAssignment[] }
+
+  POST   /vendor-assignments                [Admin, Showrunner, Producer, Prod Coord]
+         Body: { vendor_id, episode_id, due_date?, notes? }
+         Response: { data: VendorAssignment }
+         Errors: 409 if episode already assigned to another vendor
+
+  PATCH  /vendor-assignments/:id            [Admin, Producer]
+         Body: { status?, due_date?, notes? }
+         Response: { data: VendorAssignment }
+
+  DELETE /vendor-assignments/:id            [Admin, Producer]
+         Response: { success: true }
+
+
+------------------------------------------------------------------------
+  DELIVERIES
+------------------------------------------------------------------------
+
+  GET    /deliveries
+         Query: ?episode_id=&vendor_id=&status=&delivery_type=&
+                 due_before=&sort=&page=&limit=
+         Response: { data: Delivery[], meta: { total, page, pages } }
+
+  GET    /deliveries/:id
+         Response: { data: Delivery, notes: Note[], revision_history: Delivery[] }
+
+  POST   /deliveries                        [Vendor Lead]
+         Content-Type: multipart/form-data
+         Body: file, episode_id, delivery_type, notes?
+         Response: { data: Delivery }
+         Side effects: notification to Producer and QC team
+
+  POST   /deliveries/:id/review             [Producer, QC Reviewer, Exec Producer]
+         Body: { status: "approved" | "rejected", qc_notes?, notes? }
+         Response: { data: Delivery }
+         Side effects:
+           - If approved: may trigger stage transition
+           - If rejected: auto-creates revision delivery + risk if 3+ revisions
+
+  GET    /deliveries/due-this-week
+         Response: { data: Delivery[] }
+
+  GET    /deliveries/overdue
+         Response: { data: Delivery[] }
+
+
+------------------------------------------------------------------------
+  RISKS
+------------------------------------------------------------------------
+
+  GET    /risks
+         Query: ?episode_id=&season_id=&severity=&status=&category=&
+                 owner_id=&sort=&page=&limit=
+         Response: { data: Risk[], meta: { total, page, pages } }
+
+  GET    /risks/:id
+         Response: { data: Risk }
+
+  POST   /risks                             [Admin, Showrunner, Producer, Prod Coord]
+         Body: { episode_id?, season_id?, title, description, severity,
+                 category, mitigation_plan?, owner_id, due_date? }
+         Response: { data: Risk }
+
+  PATCH  /risks/:id                         [Admin, Showrunner, Producer, Prod Coord, owner]
+         Body: { severity?, status?, mitigation_plan?, due_date?, description? }
+         Response: { data: Risk }
+         Side effects: status -> "resolved" sets resolved_at
+
+  GET    /risks/summary
+         Response: { total, by_severity: {}, by_status: {}, by_category: {},
+                     critical_count, episodes_at_risk: Episode[] }
+
+
+------------------------------------------------------------------------
+  CHARACTERS
+------------------------------------------------------------------------
+
+  GET    /characters
+         Query: ?type=&voice_actor=&sort=
+         Response: { data: Character[] }
+
+  GET    /characters/:id
+         Response: { data: Character, roles: CharacterRole[], traits: string[],
+                     assets: Asset[], episodes_appearing: Episode[] }
+
+  POST   /characters                        [Admin, Showrunner, Producer]
+         Body: { name, voice_actor?, description?, type, first_appearance_id?,
+                 roles: string[], traits: string[] }
+         Response: { data: Character }
+
+  PATCH  /characters/:id                    [Admin, Showrunner, Producer]
+         Body: { name?, voice_actor?, description?, type?, roles?, traits? }
+         Response: { data: Character }
+
+  DELETE /characters/:id                    [Admin]
+         Response: { success: true }
+
+  GET    /characters/:id/assets
+         Response: { data: Asset[], missing: string[] }
+
+
+------------------------------------------------------------------------
+  NOTES
+------------------------------------------------------------------------
+
+  GET    /notes
+         Query: ?episode_id=&task_id=&delivery_id=&asset_id=&type=&
+                 author_id=&sort=&page=&limit=
+         Response: { data: Note[], meta: { total, page, pages } }
+
+  POST   /notes
+         Body: { episode_id?, task_id?, delivery_id?, asset_id?,
+                 content, type?, is_internal? }
+         Response: { data: Note }
+
+  PATCH  /notes/:id                         [Author only]
+         Body: { content }
+         Response: { data: Note }
+
+  DELETE /notes/:id                         [Author, Admin]
+         Response: { success: true }
+
+
+------------------------------------------------------------------------
+  NOTIFICATIONS
+------------------------------------------------------------------------
+
+  GET    /notifications
+         Query: ?is_read=false&type=&page=&limit=
+         Response: { data: Notification[], meta: { total, unread_count } }
+
+  PATCH  /notifications/:id/read
+         Response: { success: true }
+
+  POST   /notifications/mark-all-read
+         Response: { success: true, count: number }
+
+
+------------------------------------------------------------------------
+  REPORTS & ANALYTICS
+------------------------------------------------------------------------
+
+  GET    /reports/dashboard
+         Response: { season_progress: {}, episode_summary: {},
+                     active_risks: number, overdue_tasks: number,
+                     upcoming_deadlines: Deadline[], recent_activity: Activity[] }
+
+  GET    /reports/production-status
+         Query: ?season_id=
+         Response: { episodes: { id, title, stage, progress, vendor, deadline,
+                     days_remaining, confidence_score, blocking_items }[] }
+
+  GET    /reports/vendor-performance
+         Response: { vendors: { id, name, quality, delivery, overall,
+                     episodes_count, on_time_rate, revision_rate }[] }
+
+  GET    /reports/asset-coverage
+         Query: ?season_id=&character_id=
+         Response: { characters: { id, name, total_assets, approved, pending,
+                     missing_types }[], episodes: { id, assets_by_category }[] }
+
+  GET    /reports/delivery-forecast
+         Query: ?season_id=
+         Response: { episodes: { id, title, deadline, projected_delivery,
+                     confidence, risk_factors }[], season_on_track: boolean }
+
+  GET    /reports/risk-summary
+         Response: { total, critical, high, medium, low, by_category,
+                     top_risks: Risk[], trending_up: Risk[] }
+
+  GET    /reports/weekly-summary
+         Response: { tasks_completed, tasks_created, deliveries_submitted,
+                     deliveries_approved, stage_transitions, new_risks,
+                     resolved_risks, highlights: string[] }
+
+  POST   /reports/export                    [Admin, Exec Producer, Producer, Network]
+         Body: { report_type, format: "pdf" | "csv" | "xlsx", filters? }
+         Response: { download_url: string }
+
+
+------------------------------------------------------------------------
+  USERS (Admin)
+------------------------------------------------------------------------
+
+  GET    /users                             [Admin, Exec Producer, Producer]
+         Response: { data: User[] }
+
+  POST   /users                             [Admin only]
+         Body: { email, name, password, role_id, vendor_id? }
+         Response: { data: User }
+
+  PATCH  /users/:id                         [Admin, self]
+         Body: { name?, email?, avatar_url?, is_active? }
+         Response: { data: User }
+
+  PATCH  /users/:id/role                    [Admin only]
+         Body: { role_id }
+         Response: { data: User }
+
+
+------------------------------------------------------------------------
+  AUDIT LOG
+------------------------------------------------------------------------
+
+  GET    /audit-log                         [Admin only]
+         Query: ?user_id=&resource_type=&resource_id=&action=&
+                 from=&to=&page=&limit=
+         Response: { data: AuditEntry[], meta: { total, page, pages } }
+
+
+------------------------------------------------------------------------
+  FILE UPLOADS
+------------------------------------------------------------------------
+
+  All file uploads use multipart/form-data.
+  Max file size: 500MB (for animation files)
+  Supported formats:
+    Images: PNG, JPG, PSD, TGA, EXR, TIFF
+    Video: MOV, MP4, AVI, MXF
+    Audio: WAV, AIFF, MP3, AAC
+    Documents: PDF, DOCX
+    Archives: ZIP, 7Z
+    Project: FLA, AEP, BLEND
+
+
+  STORAGE:
+    Files stored in cloud storage (S3/GCS).
+    Upload flow:
+      1. Client calls POST /assets/upload with metadata
+      2. Server returns a presigned upload URL
+      3. Client uploads file directly to cloud storage
+      4. Client confirms upload complete
+      5. Server processes file (generate thumbnail, extract metadata)
+
+
+================================================================================
+  6. AUTOMATION ROADMAP
+================================================================================
+
+PHASE 1 - CORE AUTOMATION (Built into v1.0)
+--------------------------------------------
+
+  1. Deadline Alert System
+     - Daily cron job scans all tasks and deliveries
+     - Generates notifications at 30/14/7/0 day marks
+     - Escalation chain: assigned user -> coordinator -> producer -> exec
+     - Email + in-app notifications
+
+  2. Overdue Task Detection
+     - Runs every 6 hours
+     - Auto-escalates priority after configurable thresholds (3 days, 7 days)
+     - Creates risk entries for chronically overdue tasks
+     - Dashboard widget shows overdue count with drill-down
+
+  3. Stage Transition Engine
+     - Validates all prerequisites before allowing transition
+     - Auto-creates tasks from stage templates
+     - Auto-notifies relevant teams
+     - Records transition in audit log
+     - Prevents backward transitions (admin override available)
+
+  4. Delivery Review Workflow
+     - Vendor submits -> QC notified -> QC reviews -> approved/rejected
+     - Rejection auto-creates revision cycle
+     - 3+ revisions auto-creates high-severity risk
+     - Approved delivery triggers stage transition check
+
+  5. Vendor Performance Scoring
+     - Recalculated on every delivery approval/rejection
+     - Quality score: based on revision rate and QC pass rate
+     - Delivery score: based on on-time delivery rate
+     - Auto-probation if scores drop below threshold (configurable, default 70%)
+
+
+PHASE 2 - INTELLIGENCE LAYER (v1.5)
+--------------------------------------------
+
+  6. Delivery Readiness Scoring
+     - Per-episode score (0-100) based on:
+       - Current progress vs. timeline position
+       - Number of open/blocked tasks
+       - Asset completion percentage
+       - Vendor performance history
+       - Active risk severity
+     - Updated in real-time, shown on dashboard
+     - Color-coded: Green (70+), Yellow (40-69), Red (<40)
+
+  7. Production Health Scoring
+     - Per-season aggregate score based on:
+       - Average episode readiness
+       - Overdue task count
+       - Open risk count and severity
+       - Vendor performance averages
+       - Asset coverage gaps
+     - Weekly trend tracking with sparkline charts
+     - Alerts if score drops more than 10 points in a week
+
+  8. Season Completion Forecasting
+     - Based on historical velocity (tasks completed per week)
+     - Projects estimated completion date for each episode
+     - Factors in: vendor turnaround times, revision rates, holiday calendars
+     - Shows "on track / at risk / behind" per season
+     - Updates weekly, shown in executive reports
+
+  9. Vendor Delay Warnings
+     - Monitors time since vendor assignment vs. expected delivery
+     - Compares against vendor's historical turnaround time
+     - Early warning at 75% of expected time with no submission
+     - Alert at 100% of expected time
+     - Auto-creates risk if vendor is 7+ days past expected delivery
+
+  10. Smart Task Suggestions
+      - When a stage transition occurs, system suggests task assignments
+        based on: user's current workload, past assignments for similar
+        stages, user's role and department
+      - Producer can accept/modify suggestions or assign manually
+
+
+PHASE 3 - ANALYTICS & REPORTING (v2.0)
+--------------------------------------------
+
+  11. Executive Dashboard Automation
+      - Weekly summary email to executive producers
+      - Auto-generated with: episodes on track, at risk, behind schedule,
+        vendor performance, upcoming milestones, critical risks
+      - PDF export for network presentations
+
+  12. Budget Tracking Integration
+      - Track costs per episode, per vendor, per season
+      - Budget vs. actual comparison
+      - Overspend alerts
+      - Revision cost attribution (which vendor/stage causes most overruns)
+
+  13. Historical Analytics
+      - Compare performance across seasons
+      - Identify bottleneck stages (which stage takes longest on average?)
+      - Vendor comparison over time
+      - Team velocity trends
+      - Predictive modeling for future season planning
+
+  14. Notification Intelligence
+      - Smart batching (don't send 20 individual notifications)
+      - Priority-based: critical = immediate, low = daily digest
+      - Channel routing: urgent = push/email, info = in-app only
+      - User notification preferences (opt-out of specific types)
+
+
+================================================================================
+  7. KEY QUERIES THE SYSTEM ANSWERS
+================================================================================
+
+Every one of these questions is answerable directly from the database
+without manual investigation:
+
+  Q: Where is every episode in the pipeline?
+  A: SELECT production_code, title, current_stage, progress, status
+     FROM episodes ORDER BY season_id, episode_number;
+     -> Also via GET /reports/production-status
+
+  Q: What is blocking production?
+  A: SELECT t.* FROM tasks t WHERE t.status = 'blocked';
+     Plus: SELECT r.* FROM risks r WHERE r.status IN ('identified', 'escalated');
+     Plus: Stage transition prerequisite checks that return unmet conditions
+     -> Also via GET /reports/production-status (blocking_items field)
+
+  Q: Which vendor is assigned to each episode?
+  A: SELECT e.production_code, e.title, v.name as vendor, va.status, va.due_date
+     FROM episodes e
+     LEFT JOIN vendor_assignments va ON e.id = va.episode_id
+     LEFT JOIN vendors v ON va.vendor_id = v.id;
+     -> Also via GET /vendor-assignments or GET /episodes (includes assignment)
+
+  Q: What assets are missing?
+  A: GET /reports/asset-coverage returns per-character and per-episode
+     missing asset types. Also GET /assets/missing for specific entities.
+
+  Q: What deliveries are due this week?
+  A: GET /deliveries/due-this-week
+     Or: SELECT * FROM deliveries d
+     JOIN vendor_assignments va ON d.episode_id = va.episode_id
+     WHERE va.due_date BETWEEN NOW() AND NOW() + INTERVAL '7 days';
+
+  Q: Which episodes are at risk?
+  A: SELECT DISTINCT e.* FROM episodes e
+     JOIN risks r ON r.episode_id = e.id
+     WHERE r.status != 'resolved' AND r.severity IN ('high', 'critical');
+     -> Also via GET /reports/risk-summary (episodes_at_risk field)
+
+  Q: Is the season on schedule?
+  A: GET /reports/delivery-forecast?season_id=X
+     Returns per-episode projected delivery dates, confidence scores,
+     and an overall season_on_track boolean.
+     Combines: current progress, historical velocity, open risks,
+     vendor performance, and remaining work.
+
+
+================================================================================
+  TECH STACK
+================================================================================
+
+  Backend:     Next.js API Routes (App Router) + Prisma ORM
+  Database:    PostgreSQL 16
+  Auth:        JWT (jose library) + bcrypt
+  File Storage:AWS S3 (or compatible)
+  Caching:     Redis (for sessions, rate limiting)
+  Queue:       Bull (Redis-backed, for async jobs like notifications, scoring)
+  Hosting:     AWS (ECS or Lambda) or Vercel + managed PostgreSQL
+  Monitoring:  Structured logging + health check endpoints
+
+
+================================================================================
+  NEXT STEPS
+================================================================================
+
+  1. Finalize this architecture (your feedback)
+  2. Set up PostgreSQL + Prisma schema
+  3. Implement auth system (JWT + roles + permissions)
+  4. Build core CRUD API endpoints
+  5. Implement stage transition engine with prerequisite checks
+  6. Connect frontend to real API (replace static data)
+  7. Build notification system
+  8. Deploy to cloud

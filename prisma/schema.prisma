@@ -1,0 +1,420 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Season {
+  id            String    @id @default(uuid())
+  number        Int       @unique
+  title         String
+  episodeCount  Int
+  status        String    @default("pre_production")
+  startDate     DateTime?
+  targetEndDate DateTime?
+  network       String    @default("Adult Swim")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  episodes Episode[]
+  risks    Risk[]
+}
+
+model Episode {
+  id               String   @id @default(uuid())
+  seasonId         String
+  productionCode   String   @unique
+  episodeNumber    Int
+  title            String
+  synopsis         String?
+  status           String   @default("not_started")
+  currentStage     String   @default("writing")
+  progress         Int      @default(0)
+  deliveryDeadline DateTime
+  airDate          DateTime?
+  scriptLocked     Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdById      String?
+
+  season            Season             @relation(fields: [seasonId], references: [id])
+  createdBy         User?              @relation("EpisodeCreator", fields: [createdById], references: [id])
+  tasks             Task[]
+  assets            Asset[]            @relation("EpisodeAssets")
+  deliveries        Delivery[]
+  risks             Risk[]
+  notes             Note[]             @relation("EpisodeNotes")
+  vendorAssignments VendorAssignment[]
+  stageHistory      PipelineStageHistory[]
+  characters        CharacterAppearance[]
+
+  @@unique([seasonId, episodeNumber])
+  @@index([currentStage])
+  @@index([deliveryDeadline])
+}
+
+model EpisodeStage {
+  id        String @id @default(uuid())
+  episodeId String
+  stage     String
+  progress  Int    @default(0)
+
+  @@unique([episodeId, stage])
+}
+
+model Task {
+  id             String    @id @default(uuid())
+  episodeId      String
+  title          String
+  description    String?
+  department     String
+  stage          String
+  status         String    @default("todo")
+  priority       String    @default("medium")
+  assignedToId   String?
+  dueDate        DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  estimatedHours Float?
+  actualHours    Float?
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+
+  episode    Episode @relation(fields: [episodeId], references: [id])
+  assignedTo User?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdBy  User?   @relation("TaskCreator", fields: [createdById], references: [id])
+  notes      Note[]  @relation("TaskNotes")
+
+  @@index([episodeId, stage])
+  @@index([assignedToId, status])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Asset {
+  id           String    @id @default(uuid())
+  episodeId    String?
+  characterId  String?
+  name         String
+  type         String
+  category     String
+  filePath     String
+  fileSize     Int       @default(0)
+  mimeType     String    @default("application/octet-stream")
+  version      String    @default("v1.0")
+  status       String    @default("pending")
+  uploadedById String
+  approvedById String?
+  approvedAt   DateTime?
+  revisionOfId String?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  episode    Episode?   @relation("EpisodeAssets", fields: [episodeId], references: [id])
+  character  Character? @relation(fields: [characterId], references: [id])
+  uploadedBy User       @relation("AssetUploader", fields: [uploadedById], references: [id])
+  approvedBy User?      @relation("AssetApprover", fields: [approvedById], references: [id])
+  revisionOf Asset?     @relation("AssetRevisions", fields: [revisionOfId], references: [id])
+  revisions  Asset[]    @relation("AssetRevisions")
+  assetNotes Note[]     @relation("AssetNotes")
+
+  @@index([episodeId, category])
+  @@index([characterId, type])
+  @@index([status])
+  @@index([uploadedById])
+}
+
+model Delivery {
+  id               String    @id @default(uuid())
+  episodeId        String
+  vendorId         String
+  deliveryType     String
+  status           String    @default("pending")
+  filePath         String?
+  fileSize         Int?
+  submittedAt      DateTime?
+  submittedById    String?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  revisionNumber   Int       @default(0)
+  parentDeliveryId String?
+  qcPassed         Boolean?
+  qcNotes          String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  episode         Episode   @relation(fields: [episodeId], references: [id])
+  vendor          Vendor    @relation(fields: [vendorId], references: [id])
+  submittedBy     User?     @relation("DeliverySubmitter", fields: [submittedById], references: [id])
+  reviewedBy      User?     @relation("DeliveryReviewer", fields: [reviewedById], references: [id])
+  parentDelivery  Delivery? @relation("DeliveryRevisions", fields: [parentDeliveryId], references: [id])
+  childDeliveries Delivery[] @relation("DeliveryRevisions")
+  deliveryNotes   Note[]    @relation("DeliveryNotes")
+
+  @@index([episodeId, vendorId])
+  @@index([status])
+  @@index([vendorId, submittedAt])
+}
+
+model Risk {
+  id                String    @id @default(uuid())
+  episodeId         String?
+  seasonId          String?
+  title             String
+  description       String
+  severity          String
+  status            String    @default("identified")
+  category          String    @default("schedule")
+  mitigationPlan    String?
+  impactDescription String?
+  ownerId           String
+  dueDate           DateTime?
+  resolvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  episode Episode? @relation(fields: [episodeId], references: [id])
+  season  Season?  @relation(fields: [seasonId], references: [id])
+  owner   User     @relation(fields: [ownerId], references: [id])
+
+  @@index([severity, status])
+  @@index([episodeId])
+  @@index([ownerId])
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  roleId       String
+  vendorId     String?
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  role     Role    @relation(fields: [roleId], references: [id])
+  vendor   Vendor? @relation(fields: [vendorId], references: [id])
+
+  createdEpisodes     Episode[]          @relation("EpisodeCreator")
+  assignedTasks       Task[]             @relation("TaskAssignee")
+  createdTasks        Task[]             @relation("TaskCreator")
+  uploadedAssets      Asset[]            @relation("AssetUploader")
+  approvedAssets      Asset[]            @relation("AssetApprover")
+  submittedDeliveries Delivery[]         @relation("DeliverySubmitter")
+  reviewedDeliveries  Delivery[]         @relation("DeliveryReviewer")
+  ownedRisks          Risk[]
+  authoredNotes       Note[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  stageTransitions    PipelineStageHistory[]
+  vendorAssignments   VendorAssignment[] @relation("AssignedBy")
+
+  @@index([roleId])
+  @@index([vendorId])
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  users       User[]
+  permissions Permission[]
+}
+
+model Permission {
+  id        String   @id @default(uuid())
+  roleId    String
+  resource  String
+  action    String
+  scope     String   @default("all")
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, resource, action])
+}
+
+model Character {
+  id                String   @id @default(uuid())
+  name              String
+  voiceActor        String?
+  description       String?
+  type              String   @default("recurring")
+  firstAppearanceId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  roles       CharacterRole[]
+  traits      CharacterTrait[]
+  assets      Asset[]
+  appearances CharacterAppearance[]
+
+  @@index([type])
+  @@index([voiceActor])
+}
+
+model CharacterRole {
+  id          String   @id @default(uuid())
+  characterId String
+  roleName    String
+  createdAt   DateTime @default(now())
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, roleName])
+}
+
+model CharacterTrait {
+  id          String   @id @default(uuid())
+  characterId String
+  trait       String
+  createdAt   DateTime @default(now())
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, trait])
+}
+
+model CharacterAppearance {
+  id          String @id @default(uuid())
+  characterId String
+  episodeId   String
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  episode   Episode   @relation(fields: [episodeId], references: [id])
+
+  @@unique([characterId, episodeId])
+}
+
+model Vendor {
+  id             String    @id @default(uuid())
+  name           String
+  country        String?
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  specialization String?
+  qualityScore   Float     @default(0)
+  deliveryScore  Float     @default(0)
+  status         String    @default("active")
+  contractStart  DateTime?
+  contractEnd    DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  users       User[]
+  assignments VendorAssignment[]
+  deliveries  Delivery[]
+
+  @@index([status])
+}
+
+model VendorAssignment {
+  id           String    @id @default(uuid())
+  vendorId     String
+  episodeId    String
+  assignedById String
+  assignedAt   DateTime  @default(now())
+  dueDate      DateTime?
+  status       String    @default("assigned")
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  vendor     Vendor  @relation(fields: [vendorId], references: [id])
+  episode    Episode @relation(fields: [episodeId], references: [id])
+  assignedBy User    @relation("AssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([vendorId, episodeId])
+  @@index([vendorId])
+  @@index([episodeId])
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  episodeId  String?
+  taskId     String?
+  deliveryId String?
+  assetId    String?
+  authorId   String
+  content    String
+  type       String   @default("general")
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  episode  Episode?  @relation("EpisodeNotes", fields: [episodeId], references: [id])
+  task     Task?     @relation("TaskNotes", fields: [taskId], references: [id])
+  delivery Delivery? @relation("DeliveryNotes", fields: [deliveryId], references: [id])
+  asset    Asset?    @relation("AssetNotes", fields: [assetId], references: [id])
+  author   User      @relation(fields: [authorId], references: [id])
+
+  @@index([episodeId])
+  @@index([taskId])
+  @@index([authorId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String
+  action       String
+  resourceType String
+  resourceId   String
+  oldValues    String?
+  newValues    String?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([resourceType, resourceId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+model PipelineStageHistory {
+  id               String   @id @default(uuid())
+  episodeId        String
+  fromStage        String?
+  toStage          String
+  transitionedById String
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  episode        Episode @relation(fields: [episodeId], references: [id])
+  transitionedBy User    @relation(fields: [transitionedById], references: [id])
+
+  @@index([episodeId, createdAt])
+}
