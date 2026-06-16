@@ -1,10 +1,37 @@
 'use client';
 import { useState } from 'react';
-import { NOTIFICATIONS } from '@/lib/data';
+import { useApi } from '@/hooks/useApi';
+
+interface NotificationData {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+interface NotificationsResp {
+  data: NotificationData[];
+  meta: { unreadCount: number };
+}
 
 export default function Header({ title }: { title: string }) {
   const [showNotifications, setShowNotifications] = useState(false);
-  const unreadCount = NOTIFICATIONS.filter(n => !n.read).length;
+  const { data: notifResp } = useApi<NotificationsResp>('/api/notifications?limit=10');
+
+  const notifications = notifResp?.data || [];
+  const unreadCount = notifResp?.meta?.unreadCount || 0;
+
+  function timeAgo(dateStr: string): string {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
 
   return (
     <header className="h-16 flex items-center justify-between px-6 border-b" style={{ borderColor: 'var(--card-border)', background: 'var(--background)' }}>
@@ -36,26 +63,30 @@ export default function Header({ title }: { title: string }) {
                 <span className="text-sm font-semibold text-white">Notifications</span>
               </div>
               <div className="max-h-80 overflow-y-auto">
-                {NOTIFICATIONS.map(n => (
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-6 text-center">
+                    <div className="text-xs" style={{ color: 'var(--muted)' }}>No notifications</div>
+                  </div>
+                ) : notifications.map(n => (
                   <div
                     key={n.id}
                     className="px-4 py-3 border-b flex gap-3 items-start"
                     style={{
                       borderColor: 'var(--card-border)',
-                      background: n.read ? 'transparent' : 'rgba(139, 92, 246, 0.05)'
+                      background: n.isRead ? 'transparent' : 'rgba(139, 92, 246, 0.05)'
                     }}
                   >
                     <div
                       className="status-dot mt-1.5 flex-shrink-0"
                       style={{
-                        background: n.type === 'error' ? 'var(--danger)' :
+                        background: n.type === 'error' || n.type === 'alert' ? 'var(--danger)' :
                           n.type === 'warning' ? 'var(--warning)' :
                           n.type === 'success' ? 'var(--success)' : 'var(--info)'
                       }}
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-[#d4d4d8]">{n.message}</p>
-                      <p className="text-[10px] mt-1" style={{ color: 'var(--muted)' }}>{n.time}</p>
+                      <p className="text-[10px] mt-1" style={{ color: 'var(--muted)' }}>{timeAgo(n.createdAt)}</p>
                     </div>
                   </div>
                 ))}

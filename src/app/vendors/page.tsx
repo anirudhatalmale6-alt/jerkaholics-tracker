@@ -1,6 +1,42 @@
 'use client';
 import Header from '@/components/Header';
-import { VENDORS, EPISODES } from '@/lib/data';
+import { useApi } from '@/hooks/useApi';
+
+interface VendorData {
+  id: string;
+  name: string;
+  country: string;
+  status: string;
+  qualityScore: number;
+  deliveryScore: number;
+  contactName: string;
+  contactEmail: string;
+  specialization: string;
+  assignments: Array<{
+    id: string;
+    status: string;
+    dueDate: string | null;
+    episode: { id: string; productionCode: string; title: string; progress: number };
+  }>;
+  _count: { deliveries: number; users: number };
+}
+
+interface VendorPerf {
+  id: string;
+  name: string;
+  country: string;
+  qualityScore: number;
+  deliveryScore: number;
+  overall: number;
+  episodesAssigned: number;
+  avgEpisodeProgress: number;
+  totalDeliveries: number;
+  approvedDeliveries: number;
+  rejectedDeliveries: number;
+  approvalRate: number;
+  revisionRate: number;
+  status: string;
+}
 
 function ScoreBar({ label, score, color }: { label: string; score: number; color: string }) {
   return (
@@ -17,13 +53,30 @@ function ScoreBar({ label, score, color }: { label: string; score: number; color
 }
 
 export default function VendorsPage() {
+  const { data: vendorsResp, loading } = useApi<{ data: VendorData[] }>('/api/vendors');
+  const { data: perfResp } = useApi<{ data: VendorPerf[] }>('/api/reports/vendor-performance');
+
+  const vendors = vendorsResp?.data || [];
+  const perfData = perfResp?.data || [];
+
+  if (loading) {
+    return (
+      <>
+        <Header title="Animation Vendors" />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-sm" style={{ color: 'var(--muted)' }}>Loading vendor data...</div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <Header title="Animation Vendors" />
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {VENDORS.map(vendor => {
-            const vendorEps = EPISODES.filter(ep => vendor.assignedEpisodes.includes(ep.id));
+          {vendors.map(vendor => {
+            const perf = perfData.find(p => p.id === vendor.id);
             return (
               <div key={vendor.id} className="glass-card rounded-xl overflow-hidden">
                 <div className="p-5">
@@ -35,8 +88,8 @@ export default function VendorsPage() {
                     <span
                       className="text-[10px] px-2.5 py-1 rounded-full font-medium"
                       style={{
-                        background: vendor.status === 'active' ? 'rgba(34,197,94,0.15)' : vendor.status === 'overdue' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                        color: vendor.status === 'active' ? 'var(--success)' : vendor.status === 'overdue' ? 'var(--danger)' : 'var(--warning)'
+                        background: vendor.status === 'active' ? 'rgba(34,197,94,0.15)' : vendor.status === 'suspended' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: vendor.status === 'active' ? 'var(--success)' : vendor.status === 'suspended' ? 'var(--danger)' : 'var(--warning)'
                       }}
                     >
                       {vendor.status.toUpperCase()}
@@ -45,12 +98,12 @@ export default function VendorsPage() {
 
                   <div className="grid grid-cols-2 gap-4 mb-5">
                     <div className="text-center p-3 rounded-lg" style={{ background: 'rgba(24,24,31,0.6)' }}>
-                      <div className="text-xl font-bold text-white">{vendor.activeTasks}</div>
-                      <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Active Tasks</div>
+                      <div className="text-xl font-bold text-white">{vendor.assignments.length}</div>
+                      <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Episodes</div>
                     </div>
                     <div className="text-center p-3 rounded-lg" style={{ background: 'rgba(24,24,31,0.6)' }}>
-                      <div className="text-xl font-bold text-white">{vendor.completedTasks}</div>
-                      <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Completed</div>
+                      <div className="text-xl font-bold text-white">{vendor._count.deliveries}</div>
+                      <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Deliveries</div>
                     </div>
                   </div>
 
@@ -62,15 +115,16 @@ export default function VendorsPage() {
                   <div>
                     <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: 'var(--muted)' }}>Assigned Episodes</div>
                     <div className="space-y-2">
-                      {vendorEps.map(ep => (
-                        <div key={ep.id} className="flex items-center gap-3 p-2 rounded-lg" style={{ background: 'rgba(24,24,31,0.6)' }}>
+                      {vendor.assignments.map(a => (
+                        <div key={a.id} className="flex items-center gap-3 p-2 rounded-lg" style={{ background: 'rgba(24,24,31,0.6)' }}>
                           <div className="flex-1">
-                            <div className="text-xs text-white">{ep.id} &mdash; {ep.title}</div>
+                            <div className="text-xs text-white">{a.episode.productionCode} &mdash; {a.episode.title}</div>
                             <div className="text-[10px]" style={{ color: 'var(--muted)' }}>
-                              {ep.status.charAt(0).toUpperCase() + ep.status.slice(1)}
+                              {a.status}
+                              {a.dueDate && ` · Due ${new Date(a.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                             </div>
                           </div>
-                          <div className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{ep.progress}%</div>
+                          <div className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{a.episode.progress}%</div>
                         </div>
                       ))}
                     </div>
@@ -78,10 +132,8 @@ export default function VendorsPage() {
                 </div>
 
                 <div className="px-5 py-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--card-border)', background: 'rgba(15,15,19,0.5)' }}>
-                  <span className="text-[10px]" style={{ color: 'var(--muted)' }}>Next Delivery</span>
-                  <span className="text-xs text-white font-medium">
-                    {new Date(vendor.nextDelivery).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </span>
+                  <span className="text-[10px]" style={{ color: 'var(--muted)' }}>Approval Rate</span>
+                  <span className="text-xs text-white font-medium">{perf?.approvalRate || 0}%</span>
                 </div>
               </div>
             );
@@ -99,17 +151,17 @@ export default function VendorsPage() {
                   <th className="text-center px-4 py-3 font-medium">Episodes</th>
                   <th className="text-center px-4 py-3 font-medium">Quality</th>
                   <th className="text-center px-4 py-3 font-medium">Delivery</th>
-                  <th className="text-center px-4 py-3 font-medium">Active</th>
-                  <th className="text-center px-4 py-3 font-medium">Done</th>
+                  <th className="text-center px-4 py-3 font-medium">Avg Progress</th>
+                  <th className="text-center px-4 py-3 font-medium">Approval</th>
                   <th className="text-left px-4 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {VENDORS.map(v => (
+                {perfData.map(v => (
                   <tr key={v.id} className="table-row">
                     <td className="px-4 py-3 font-medium text-white">{v.name}</td>
                     <td className="px-4 py-3 text-[#a1a1aa]">{v.country}</td>
-                    <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.assignedEpisodes.length}</td>
+                    <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.episodesAssigned}</td>
                     <td className="px-4 py-3 text-center">
                       <span style={{ color: v.qualityScore >= 90 ? 'var(--success)' : v.qualityScore >= 80 ? 'var(--warning)' : 'var(--danger)' }}>
                         {v.qualityScore}%
@@ -120,8 +172,10 @@ export default function VendorsPage() {
                         {v.deliveryScore}%
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.activeTasks}</td>
-                    <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.completedTasks}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span style={{ color: 'var(--accent)' }}>{v.avgEpisodeProgress}%</span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.approvalRate}%</td>
                     <td className="px-4 py-3">
                       <span
                         className="text-[10px] px-2 py-0.5 rounded-full font-medium"

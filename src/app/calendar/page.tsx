@@ -1,13 +1,41 @@
 'use client';
+import { useMemo } from 'react';
 import Header from '@/components/Header';
-import { CALENDAR_EVENTS } from '@/lib/data';
+import { useApi } from '@/hooks/useApi';
+
+interface EpisodeData {
+  id: string;
+  productionCode: string;
+  title: string;
+  deliveryDeadline: string;
+  airDate: string | null;
+  progress: number;
+  currentStage: string;
+}
+
+interface TaskData {
+  id: string;
+  title: string;
+  dueDate: string | null;
+  status: string;
+  episode: { productionCode: string };
+  assignedTo: { name: string } | null;
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;
+  type: 'deadline' | 'delivery' | 'airdate' | 'task';
+  episode?: string;
+  assignee?: string;
+}
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   deadline: { bg: 'rgba(245,158,11,0.1)', text: '#f59e0b', dot: '#f59e0b' },
-  recording: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6', dot: '#8b5cf6' },
   delivery: { bg: 'rgba(59,130,246,0.1)', text: '#3b82f6', dot: '#3b82f6' },
-  review: { bg: 'rgba(34,197,94,0.1)', text: '#22c55e', dot: '#22c55e' },
   airdate: { bg: 'rgba(239,68,68,0.1)', text: '#ef4444', dot: '#ef4444' },
+  task: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6', dot: '#8b5cf6' },
 };
 
 function getDaysInMonth(year: number, month: number) {
@@ -19,17 +47,58 @@ function getFirstDayOfMonth(year: number, month: number) {
 }
 
 export default function CalendarPage() {
+  const { data: episodesResp, loading } = useApi<{ data: EpisodeData[] }>('/api/episodes?limit=100');
+  const { data: tasksResp } = useApi<{ data: TaskData[] }>('/api/tasks?limit=100');
+
+  const episodes = episodesResp?.data || [];
+  const tasks = tasksResp?.data || [];
+
+  const events: CalendarEvent[] = useMemo(() => {
+    const evts: CalendarEvent[] = [];
+    for (const ep of episodes) {
+      evts.push({
+        id: `del-${ep.id}`,
+        title: `Delivery - ${ep.productionCode}`,
+        date: ep.deliveryDeadline,
+        type: 'delivery',
+        episode: ep.productionCode,
+      });
+      if (ep.airDate) {
+        evts.push({
+          id: `air-${ep.id}`,
+          title: `Air Date - ${ep.productionCode}`,
+          date: ep.airDate,
+          type: 'airdate',
+          episode: ep.productionCode,
+        });
+      }
+    }
+    for (const task of tasks) {
+      if (task.dueDate && task.status !== 'done') {
+        evts.push({
+          id: `task-${task.id}`,
+          title: task.title,
+          date: task.dueDate,
+          type: 'task',
+          episode: task.episode?.productionCode,
+          assignee: task.assignedTo?.name || undefined,
+        });
+      }
+    }
+    return evts;
+  }, [episodes, tasks]);
+
   const year = 2026;
   const month = 5;
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
-  const today = 15;
+  const today = 16;
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthName = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const eventsByDay: Record<number, typeof CALENDAR_EVENTS> = {};
-  CALENDAR_EVENTS.forEach(e => {
+  const eventsByDay: Record<number, CalendarEvent[]> = {};
+  events.forEach(e => {
     const d = new Date(e.date);
     if (d.getFullYear() === year && d.getMonth() === month) {
       const day = d.getDate();
@@ -42,10 +111,21 @@ export default function CalendarPage() {
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const upcomingEvents = CALENDAR_EVENTS
-    .filter(e => new Date(e.date) >= new Date('2026-06-15'))
+  const upcomingEvents = events
+    .filter(e => new Date(e.date) >= new Date('2026-06-16'))
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .slice(0, 10);
+    .slice(0, 15);
+
+  if (loading) {
+    return (
+      <>
+        <Header title="Production Calendar" />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-sm" style={{ color: 'var(--muted)' }}>Loading calendar...</div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -77,7 +157,7 @@ export default function CalendarPage() {
             <div className="grid grid-cols-7 gap-1">
               {cells.map((day, i) => {
                 if (day === null) return <div key={`empty-${i}`} />;
-                const events = eventsByDay[day] || [];
+                const dayEvents = eventsByDay[day] || [];
                 const isToday = day === today;
 
                 return (
@@ -93,7 +173,7 @@ export default function CalendarPage() {
                       {day}
                     </div>
                     <div className="space-y-0.5">
-                      {events.slice(0, 2).map(e => {
+                      {dayEvents.slice(0, 2).map(e => {
                         const colors = TYPE_COLORS[e.type];
                         return (
                           <div
@@ -106,9 +186,9 @@ export default function CalendarPage() {
                           </div>
                         );
                       })}
-                      {events.length > 2 && (
+                      {dayEvents.length > 2 && (
                         <div className="text-[9px] px-1.5" style={{ color: 'var(--muted)' }}>
-                          +{events.length - 2} more
+                          +{dayEvents.length - 2} more
                         </div>
                       )}
                     </div>
@@ -122,7 +202,7 @@ export default function CalendarPage() {
             <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--card-border)' }}>
               <span className="text-sm font-semibold text-white">Upcoming Events</span>
             </div>
-            <div className="p-3 space-y-2">
+            <div className="p-3 space-y-2 max-h-[600px] overflow-y-auto">
               {upcomingEvents.map(event => {
                 const colors = TYPE_COLORS[event.type];
                 return (
@@ -141,6 +221,9 @@ export default function CalendarPage() {
                   </div>
                 );
               })}
+              {upcomingEvents.length === 0 && (
+                <div className="text-xs text-center py-4" style={{ color: 'var(--muted)' }}>No upcoming events</div>
+              )}
             </div>
           </div>
         </div>

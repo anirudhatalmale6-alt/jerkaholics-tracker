@@ -34,8 +34,24 @@ export async function GET(req: NextRequest) {
     prisma.episode.count({ where }),
   ]);
 
+  const episodeIds = episodes.map(e => e.id);
+  const allStages = await prisma.episodeStage.findMany({
+    where: { episodeId: { in: episodeIds } },
+  });
+
+  const stagesByEpisode = allStages.reduce((acc, s) => {
+    if (!acc[s.episodeId]) acc[s.episodeId] = [];
+    acc[s.episodeId].push({ stage: s.stage, progress: s.progress });
+    return acc;
+  }, {} as Record<string, Array<{ stage: string; progress: number }>>);
+
+  const data = episodes.map(ep => ({
+    ...ep,
+    stages: stagesByEpisode[ep.id] || [],
+  }));
+
   return NextResponse.json({
-    data: episodes,
+    data,
     meta: { total, page, pages: Math.ceil(total / limit) },
   });
 }

@@ -1,6 +1,62 @@
 'use client';
 import Header from '@/components/Header';
-import { EPISODES, VENDORS, TASKS, RISKS, getSeasonProgress, getTasksByStatus, getEpisodesBySeason } from '@/lib/data';
+import { useApi } from '@/hooks/useApi';
+
+interface DashboardData {
+  data: {
+    seasonProgress: Array<{ number: number; title: string; episodeCount: number; progress: number }>;
+    totalEpisodes: number;
+    totalTasks: number;
+    overdueTasks: number;
+    activeRisks: number;
+    criticalRisks: number;
+    tasksByStatus: Record<string, number>;
+  };
+}
+
+interface ProductionStatus {
+  data: Array<{
+    id: string;
+    productionCode: string;
+    title: string;
+    season: number;
+    stage: string;
+    progress: number;
+    vendor: string;
+    deadline: string;
+    daysRemaining: number;
+    confidenceScore: number;
+    blockingItems: string[];
+    totalTasks: number;
+    completedTasks: number;
+    activeRisks: number;
+  }>;
+}
+
+interface VendorPerf {
+  data: Array<{
+    id: string;
+    name: string;
+    country: string;
+    qualityScore: number;
+    deliveryScore: number;
+    overall: number;
+    episodesAssigned: number;
+    avgEpisodeProgress: number;
+    totalDeliveries: number;
+    approvedDeliveries: number;
+    rejectedDeliveries: number;
+    approvalRate: number;
+  }>;
+}
+
+interface TaskData {
+  data: Array<{
+    id: string;
+    department: string;
+    status: string;
+  }>;
+}
 
 function BarChart({ data, maxVal }: { data: { label: string; value: number; color: string }[]; maxVal: number }) {
   return (
@@ -21,31 +77,46 @@ function BarChart({ data, maxVal }: { data: { label: string; value: number; colo
 }
 
 export default function ReportsPage() {
-  const seasonProgress = getSeasonProgress();
-  const taskStats = getTasksByStatus();
-  const totalTasks = TASKS.length;
+  const { data: dashData, loading } = useApi<DashboardData>('/api/reports/dashboard');
+  const { data: prodStatus } = useApi<ProductionStatus>('/api/reports/production-status');
+  const { data: vendorPerf } = useApi<VendorPerf>('/api/reports/vendor-performance');
+  const { data: tasksResp } = useApi<TaskData>('/api/tasks?limit=200');
 
-  const episodeData = EPISODES.map(ep => ({
-    label: `${ep.id} - ${ep.title}`,
+  const dashboard = dashData?.data;
+  const episodes = prodStatus?.data || [];
+  const vendors = vendorPerf?.data || [];
+  const tasks = tasksResp?.data || [];
+
+  const totalProgress = dashboard?.seasonProgress
+    ? Math.round(dashboard.seasonProgress.reduce((s, p) => s + p.progress, 0) / dashboard.seasonProgress.length)
+    : 0;
+  const tasksByStatus = dashboard?.tasksByStatus || {};
+  const totalTasks = dashboard?.totalTasks || tasks.length;
+  const totalEpisodes = dashboard?.totalEpisodes || episodes.length;
+  const openRisks = dashboard?.activeRisks || 0;
+
+  const episodeData = episodes.map(ep => ({
+    label: `${ep.productionCode} - ${ep.title}`,
     value: ep.progress,
     color: ep.progress > 50 ? '#22c55e' : ep.progress > 20 ? '#f59e0b' : '#ef4444'
   }));
 
-  const vendorData = VENDORS.map(v => ({
-    label: v.name,
-    quality: v.qualityScore,
-    delivery: v.deliveryScore,
-    episodes: v.assignedEpisodes.length,
-    avgProgress: Math.round(
-      EPISODES.filter(ep => v.assignedEpisodes.includes(ep.id))
-        .reduce((sum, ep) => sum + ep.progress, 0) / v.assignedEpisodes.length
-    )
-  }));
-
-  const departmentBreakdown = TASKS.reduce((acc, task) => {
-    acc[task.department] = (acc[task.department] || 0) + 1;
+  const departmentBreakdown = tasks.reduce((acc, task) => {
+    const dept = (task as any).department || 'Other';
+    acc[dept] = (acc[dept] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+
+  if (loading) {
+    return (
+      <>
+        <Header title="Executive Reports" />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-sm" style={{ color: 'var(--muted)' }}>Loading reports...</div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -53,11 +124,11 @@ export default function ReportsPage() {
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="glass-card rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold gradient-accent bg-clip-text" style={{ WebkitTextFillColor: 'transparent' }}>{seasonProgress}%</div>
-            <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>Season Complete</div>
+            <div className="text-2xl font-bold gradient-accent bg-clip-text" style={{ WebkitTextFillColor: 'transparent' }}>{totalProgress}%</div>
+            <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>Overall Progress</div>
           </div>
           <div className="glass-card rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold text-white">{EPISODES.length}</div>
+            <div className="text-2xl font-bold text-white">{totalEpisodes}</div>
             <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>Total Episodes</div>
           </div>
           <div className="glass-card rounded-xl p-4 text-center">
@@ -65,12 +136,12 @@ export default function ReportsPage() {
             <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>Total Tasks</div>
           </div>
           <div className="glass-card rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold text-white">{VENDORS.length}</div>
+            <div className="text-2xl font-bold text-white">{vendors.length}</div>
             <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>Active Vendors</div>
           </div>
           <div className="glass-card rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold" style={{ color: RISKS.filter(r => r.status !== 'resolved').length > 2 ? 'var(--danger)' : 'var(--success)' }}>
-              {RISKS.filter(r => r.status !== 'resolved').length}
+            <div className="text-2xl font-bold" style={{ color: openRisks > 2 ? 'var(--danger)' : 'var(--success)' }}>
+              {openRisks}
             </div>
             <div className="text-[10px] uppercase tracking-wider mt-1" style={{ color: 'var(--muted)' }}>Open Risks</div>
           </div>
@@ -86,19 +157,19 @@ export default function ReportsPage() {
             <h3 className="text-sm font-semibold text-white mb-5">Task Distribution</h3>
             <div className="grid grid-cols-2 gap-4 mb-5">
               <div className="p-3 rounded-lg text-center" style={{ background: 'rgba(113,113,122,0.1)' }}>
-                <div className="text-lg font-bold text-white">{taskStats.todo}</div>
+                <div className="text-lg font-bold text-white">{tasksByStatus['todo'] || 0}</div>
                 <div className="text-[10px]" style={{ color: 'var(--muted)' }}>To Do</div>
               </div>
               <div className="p-3 rounded-lg text-center" style={{ background: 'rgba(139,92,246,0.1)' }}>
-                <div className="text-lg font-bold" style={{ color: 'var(--accent)' }}>{taskStats.in_progress}</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--accent)' }}>{tasksByStatus['in_progress'] || 0}</div>
                 <div className="text-[10px]" style={{ color: 'var(--muted)' }}>In Progress</div>
               </div>
               <div className="p-3 rounded-lg text-center" style={{ background: 'rgba(34,197,94,0.1)' }}>
-                <div className="text-lg font-bold" style={{ color: 'var(--success)' }}>{taskStats.review}</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--success)' }}>{tasksByStatus['review'] || 0}</div>
                 <div className="text-[10px]" style={{ color: 'var(--muted)' }}>In Review</div>
               </div>
               <div className="p-3 rounded-lg text-center" style={{ background: 'rgba(59,130,246,0.1)' }}>
-                <div className="text-lg font-bold" style={{ color: 'var(--info)' }}>{taskStats.done}</div>
+                <div className="text-lg font-bold" style={{ color: 'var(--info)' }}>{tasksByStatus['done'] || 0}</div>
                 <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Done</div>
               </div>
             </div>
@@ -135,76 +206,74 @@ export default function ReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {vendorData.map((v, i) => {
-                  const overall = Math.round((v.quality + v.delivery) / 2);
-                  return (
-                    <tr key={i} className="table-row">
-                      <td className="px-4 py-3 font-medium text-white">{v.label}</td>
-                      <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.episodes}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span style={{ color: 'var(--accent)' }}>{v.avgProgress}%</span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span style={{ color: v.quality >= 90 ? 'var(--success)' : 'var(--warning)' }}>{v.quality}%</span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span style={{ color: v.delivery >= 90 ? 'var(--success)' : 'var(--warning)' }}>{v.delivery}%</span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className="text-xs px-2.5 py-1 rounded-full font-semibold"
-                          style={{
-                            background: overall >= 90 ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                            color: overall >= 90 ? 'var(--success)' : 'var(--warning)'
-                          }}
-                        >
-                          {overall}%
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {vendors.map(v => (
+                  <tr key={v.id} className="table-row">
+                    <td className="px-4 py-3 font-medium text-white">{v.name}</td>
+                    <td className="px-4 py-3 text-center text-[#d4d4d8]">{v.episodesAssigned}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span style={{ color: 'var(--accent)' }}>{v.avgEpisodeProgress}%</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span style={{ color: v.qualityScore >= 90 ? 'var(--success)' : 'var(--warning)' }}>{v.qualityScore}%</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span style={{ color: v.deliveryScore >= 90 ? 'var(--success)' : 'var(--warning)' }}>{v.deliveryScore}%</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className="text-xs px-2.5 py-1 rounded-full font-semibold"
+                        style={{
+                          background: v.overall >= 90 ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                          color: v.overall >= 90 ? 'var(--success)' : 'var(--warning)'
+                        }}
+                      >
+                        {v.overall}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
 
         <div className="glass-card rounded-xl p-6">
-          <h3 className="text-sm font-semibold text-white mb-5">Delivery Confidence</h3>
+          <h3 className="text-sm font-semibold text-white mb-5">Production Health &amp; Delivery Confidence</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {EPISODES.slice(0, 4).map(ep => {
-              const daysUntilDelivery = Math.ceil((new Date(ep.deliveryDeadline).getTime() - new Date('2026-06-15').getTime()) / (1000 * 60 * 60 * 24));
-              const confidence = Math.min(100, Math.round(ep.progress + (ep.progress / daysUntilDelivery) * 30));
-              return (
-                <div key={ep.id} className="p-4 rounded-lg" style={{ background: 'rgba(24,24,31,0.6)', border: '1px solid var(--card-border)' }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-white">{ep.id}</span>
-                    <span
-                      className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                      style={{
-                        background: confidence >= 70 ? 'rgba(34,197,94,0.15)' : confidence >= 40 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
-                        color: confidence >= 70 ? 'var(--success)' : confidence >= 40 ? 'var(--warning)' : 'var(--danger)'
-                      }}
-                    >
-                      {confidence >= 70 ? 'On Track' : confidence >= 40 ? 'At Risk' : 'Behind'}
-                    </span>
-                  </div>
-                  <div className="text-lg font-bold text-white mb-1">{confidence}%</div>
-                  <div className="text-[10px]" style={{ color: 'var(--muted)' }}>
-                    {daysUntilDelivery} days to delivery
-                  </div>
-                  <div className="progress-bar h-1.5 mt-2">
-                    <div
-                      className="progress-bar-fill"
-                      style={{
-                        width: `${confidence}%`,
-                        background: confidence >= 70 ? 'var(--success)' : confidence >= 40 ? 'var(--warning)' : 'var(--danger)'
-                      }}
-                    />
-                  </div>
+            {episodes.slice(0, 8).map(ep => (
+              <div key={ep.id} className="p-4 rounded-lg" style={{ background: 'rgba(24,24,31,0.6)', border: '1px solid var(--card-border)' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-white">{ep.productionCode}</span>
+                  <span
+                    className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                    style={{
+                      background: ep.confidenceScore >= 70 ? 'rgba(34,197,94,0.15)' : ep.confidenceScore >= 40 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
+                      color: ep.confidenceScore >= 70 ? 'var(--success)' : ep.confidenceScore >= 40 ? 'var(--warning)' : 'var(--danger)'
+                    }}
+                  >
+                    {ep.confidenceScore >= 70 ? 'On Track' : ep.confidenceScore >= 40 ? 'At Risk' : 'Behind'}
+                  </span>
                 </div>
-              );
-            })}
+                <div className="text-lg font-bold text-white mb-1">{ep.confidenceScore}%</div>
+                <div className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                  {ep.daysRemaining > 0 ? `${ep.daysRemaining} days to delivery` : `${Math.abs(ep.daysRemaining)} days overdue`}
+                </div>
+                {ep.blockingItems.length > 0 && (
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--danger)' }}>
+                    {ep.blockingItems[0]}
+                  </div>
+                )}
+                <div className="progress-bar h-1.5 mt-2">
+                  <div
+                    className="progress-bar-fill"
+                    style={{
+                      width: `${ep.confidenceScore}%`,
+                      background: ep.confidenceScore >= 70 ? 'var(--success)' : ep.confidenceScore >= 40 ? 'var(--warning)' : 'var(--danger)'
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
